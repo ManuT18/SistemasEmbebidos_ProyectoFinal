@@ -1,29 +1,53 @@
-[![Review Assignment Due Date](https://classroom.github.com/assets/deadline-readme-button-22041afd0340ce965d47ae6ef1cefeee28c7c493a6346c4f15d667ab976d596c.svg)](https://classroom.github.com/a/IbdC6fOf)
-# Proyecto Final de la materia de Sistemas Embebidos
+| Supported Targets | ESP32 | ESP32-C2 | ESP32-C3 | ESP32-C5 | ESP32-C6 | ESP32-C61 | ESP32-H2 | ESP32-H21 | ESP32-H4 | ESP32-P4 | ESP32-S2 | ESP32-S3 | Linux |
+| ----------------- | ----- | -------- | -------- | -------- | -------- | --------- | -------- | --------- | -------- | -------- | -------- | -------- | ----- |
 
-## Objetivos
+# Hello World Example
 
-* Desarrollar un proyecto de construcción de un Sistema Embebido a elección de la comisión. El proyecto puede utilizar cualquier hardware y software provisto por la cátedra u obtenido por los estudiantes. La comisión puede tener hasta 4 miembros entre cualquiera de los participantes del cursado.
-* Una vez concretado el proyecto, debe mostrarse su funcionamiento el día de la fecha límite de evaluación.
-* La fecha de la defensa, la comisión debe presentar el proyecto a la cátedra y sus compañeros, con una exposición oral que no exceda los 10 minutos. Luego debe mostrar el proyecto en funcionamiento, o un video en caso de no poder mostrarse en clase.
+Starts a FreeRTOS task to print "Hello World".
 
-## Entregables
+(See the README.md file in the upper level 'examples' directory for more information about examples.)
 
-La comisión debe enviar por mail a la cátedra, en la fecha de entrega o antes, los siguientes entregables:
+## How to use example
 
-* *Slides* que hayan sido utilizadas durante la defensa.
-* Código fuente.
-* Video de funcionamiento del proyecto.
-* Informe con longitud entre 2 y 5 páginas A4, conteniendo:
-    * Resumen máximo de 300 palabras.
-    * Descripción del problema, los objetivos y motivación del trabajo.
-    * Descripción de la plataforma de hardware y software adoptados para el trabajo.
-    * Descripción de la solución adoptada.
+Follow detailed instructions provided specifically for this example.
 
-## Recomendaciones para la defensa
+Select the instructions depending on Espressif chip installed on your development board:
 
-* Es recomendable que la defensa comience con una introducción explicando el problema que
-resuelve o la motivación del proyecto. Luego se explique el funcionamiento del proyecto, el
-hardware utilizado, el software, inconvenientes y decisiones de diseño tomadas, y finalmente
-conclusiones.
-* Es importante no exceder el tiempo asignado a la presentación.
+- [ESP32 Getting Started Guide](https://docs.espressif.com/projects/esp-idf/en/stable/get-started/index.html)
+- [ESP32-S2 Getting Started Guide](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s2/get-started/index.html)
+
+
+## Example folder contents
+
+The project **hello_world** contains one source file in C language [hello_world_main.c](main/hello_world_main.c). The file is located in folder [main](main).
+
+ESP-IDF projects are built using CMake. The project build configuration is contained in `CMakeLists.txt` files that provide set of directives and instructions describing the project's source files and targets (executable, library, or both).
+
+Below is short explanation of remaining files in the project folder.
+
+```
+├── CMakeLists.txt
+├── pytest_hello_world.py      Python script used for automated testing
+├── main
+│   ├── CMakeLists.txt
+│   └── hello_world_main.c
+└── README.md                  This is the file you are currently reading
+```
+
+For more information on structure and contents of ESP-IDF projects, please refer to Section [Build System](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-guides/build-system.html) of the ESP-IDF Programming Guide.
+
+## Troubleshooting
+
+* Program upload failure
+
+    * Hardware connection is not correct: run `idf.py -p PORT monitor`, and reboot your board to see if there are any output logs.
+    * The baud rate for downloading is too high: lower your baud rate in the `menuconfig` menu, and try again.
+
+## Technical support and feedback
+
+Please use the following feedback channels:
+
+* For technical queries, go to the [esp32.com](https://esp32.com/) forum
+* For a feature request or bug report, create a [GitHub issue](https://github.com/espressif/esp-idf/issues)
+
+We will get back to you as soon as possible.
