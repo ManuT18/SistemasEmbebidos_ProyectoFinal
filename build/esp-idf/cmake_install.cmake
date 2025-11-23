@@ -184,6 +184,126 @@ endif()
 
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   # Include the install script for the subdirectory.
+  include("C:/Users/manut/Documentos/UNIVERSIDAD/2025/Sistemas_Embebidos/proyecto-final-tauro-aguirre/build/esp-idf/esp_ringbuf/cmake_install.cmake")
+endif()
+
+if(NOT CMAKE_INSTALL_LOCAL_ONLY)
+  # Include the install script for the subdirectory.
+  include("C:/Users/manut/Documentos/UNIVERSIDAD/2025/Sistemas_Embebidos/proyecto-final-tauro-aguirre/build/esp-idf/esp_driver_i2s/cmake_install.cmake")
+endif()
+
+if(NOT CMAKE_INSTALL_LOCAL_ONLY)
+  # Include the install script for the subdirectory.
+  include("C:/Users/manut/Documentos/UNIVERSIDAD/2025/Sistemas_Embebidos/proyecto-final-tauro-aguirre/build/esp-idf/esp_driver_pcnt/cmake_install.cmake")
+endif()
+
+if(NOT CMAKE_INSTALL_LOCAL_ONLY)
+  # Include the install script for the subdirectory.
+  include("C:/Users/manut/Documentos/UNIVERSIDAD/2025/Sistemas_Embebidos/proyecto-final-tauro-aguirre/build/esp-idf/esp_driver_gptimer/cmake_install.cmake")
+endif()
+
+if(NOT CMAKE_INSTALL_LOCAL_ONLY)
+  # Include the install script for the subdirectory.
+  include("C:/Users/manut/Documentos/UNIVERSIDAD/2025/Sistemas_Embebidos/proyecto-final-tauro-aguirre/build/esp-idf/esp_driver_spi/cmake_install.cmake")
+endif()
+
+if(NOT CMAKE_INSTALL_LOCAL_ONLY)
+  # Include the install script for the subdirectory.
+  include("C:/Users/manut/Documentos/UNIVERSIDAD/2025/Sistemas_Embebidos/proyecto-final-tauro-aguirre/build/esp-idf/esp_driver_mcpwm/cmake_install.cmake")
+endif()
+
+if(NOT CMAKE_INSTALL_LOCAL_ONLY)
+  # Include the install script for the subdirectory.
+  include("C:/Users/manut/Documentos/UNIVERSIDAD/2025/Sistemas_Embebidos/proyecto-final-tauro-aguirre/build/esp-idf/esp_driver_ana_cmpr/cmake_install.cmake")
+endif()
+
+if(NOT CMAKE_INSTALL_LOCAL_ONLY)
+  # Include the install script for the subdirectory.
+  include("C:/Users/manut/Documentos/UNIVERSIDAD/2025/Sistemas_Embebidos/proyecto-final-tauro-aguirre/build/esp-idf/sdmmc/cmake_install.cmake")
+endif()
+
+if(NOT CMAKE_INSTALL_LOCAL_ONLY)
+  # Include the install script for the subdirectory.
+  include("C:/Users/manut/Documentos/UNIVERSIDAD/2025/Sistemas_Embebidos/proyecto-final-tauro-aguirre/build/esp-idf/esp_driver_sdmmc/cmake_install.cmake")
+endif()
+
+if(NOT CMAKE_INSTALL_LOCAL_ONLY)
+  # Include the install script for the subdirectory.
+  include("C:/Users/manut/Documentos/UNIVERSIDAD/2025/Sistemas_Embebidos/proyecto-final-tauro-aguirre/build/esp-idf/esp_driver_sdspi/cmake_install.cmake")
+endif()
+
+if(NOT CMAKE_INSTALL_LOCAL_ONLY)
+  # Include the install script for the subdirectory.
+  include("C:/Users/manut/Documentos/UNIVERSIDAD/2025/Sistemas_Embebidos/proyecto-final-tauro-aguirre/build/esp-idf/esp_driver_sdio/cmake_install.cmake")
+endif()
+
+if(NOT CMAKE_INSTALL_LOCAL_ONLY)
+  # Include the install script for the subdirectory.
+  include("C:/Users/manut/Documentos/UNIVERSIDAD/2025/Sistemas_Embebidos/proyecto-final-tauro-aguirre/build/esp-idf/esp_driver_dac/cmake_install.cmake")
+endif()
+
+if(NOT CMAKE_INSTALL_LOCAL_ONLY)
+  # Include the install script for the subdirectory.
+  include("C:/Users/manut/Documentos/UNIVERSIDAD/2025/Sistemas_Embebidos/proyecto-final-tauro-aguirre/build/esp-idf/esp_driver_bitscrambler/cmake_install.cmake")
+endif()
+
+if(NOT CMAKE_INSTALL_LOCAL_ONLY)
+  # Include the install script for the subdirectory.
+  include("C:/Users/manut/Documentos/UNIVERSIDAD/2025/Sistemas_Embebidos/proyecto-final-tauro-aguirre/build/esp-idf/esp_driver_rmt/cmake_install.cmake")
+endif()
+
+if(NOT CMAKE_INSTALL_LOCAL_ONLY)
+  # Include the install script for the subdirectory.
+  include("C:/Users/manut/Documentos/UNIVERSIDAD/2025/Sistemas_Embebidos/proyecto-final-tauro-aguirre/build/esp-idf/esp_driver_tsens/cmake_install.cmake")
+endif()
+
+if(NOT CMAKE_INSTALL_LOCAL_ONLY)
+  # Include the install script for the subdirectory.
+  include("C:/Users/manut/Documentos/UNIVERSIDAD/2025/Sistemas_Embebidos/proyecto-final-tauro-aguirre/build/esp-idf/esp_driver_sdm/cmake_install.cmake")
+endif()
+
+if(NOT CMAKE_INSTALL_LOCAL_ONLY)
+  # Include the install script for the subdirectory.
+  include("C:/Users/manut/Documentos/UNIVERSIDAD/2025/Sistemas_Embebidos/proyecto-final-tauro-aguirre/build/esp-idf/esp_driver_i2c/cmake_install.cmake")
+endif()
+
+if(NOT CMAKE_INSTALL_LOCAL_ONLY)
+  # Include the install script for the subdirectory.
+  include("C:/Users/manut/Documentos/UNIVERSIDAD/2025/Sistemas_Embebidos/proyecto-final-tauro-aguirre/build/esp-idf/esp_driver_uart/cmake_install.cmake")
+endif()
+
+if(NOT CMAKE_INSTALL_LOCAL_ONLY)
+  # Include the install script for the subdirectory.
+  include("C:/Users/manut/Documentos/UNIVERSIDAD/2025/Sistemas_Embebidos/proyecto-final-tauro-aguirre/build/esp-idf/esp_driver_ledc/cmake_install.cmake")
+endif()
+
+if(NOT CMAKE_INSTALL_LOCAL_ONLY)
+  # Include the install script for the subdirectory.
+  include("C:/Users/manut/Documentos/UNIVERSIDAD/2025/Sistemas_Embebidos/proyecto-final-tauro-aguirre/build/esp-idf/esp_driver_parlio/cmake_install.cmake")
+endif()
+
+if(NOT CMAKE_INSTALL_LOCAL_ONLY)
+  # Include the install script for the subdirectory.
+  include("C:/Users/manut/Documentos/UNIVERSIDAD/2025/Sistemas_Embebidos/proyecto-final-tauro-aguirre/build/esp-idf/esp_driver_usb_serial_jtag/cmake_install.cmake")
+endif()
+
+if(NOT CMAKE_INSTALL_LOCAL_ONLY)
+  # Include the install script for the subdirectory.
+  include("C:/Users/manut/Documentos/UNIVERSIDAD/2025/Sistemas_Embebidos/proyecto-final-tauro-aguirre/build/esp-idf/esp_driver_twai/cmake_install.cmake")
+endif()
+
+if(NOT CMAKE_INSTALL_LOCAL_ONLY)
+  # Include the install script for the subdirectory.
+  include("C:/Users/manut/Documentos/UNIVERSIDAD/2025/Sistemas_Embebidos/proyecto-final-tauro-aguirre/build/esp-idf/driver/cmake_install.cmake")
+endif()
+
+if(NOT CMAKE_INSTALL_LOCAL_ONLY)
+  # Include the install script for the subdirectory.
+  include("C:/Users/manut/Documentos/UNIVERSIDAD/2025/Sistemas_Embebidos/proyecto-final-tauro-aguirre/build/esp-idf/esp_adc/cmake_install.cmake")
+endif()
+
+if(NOT CMAKE_INSTALL_LOCAL_ONLY)
+  # Include the install script for the subdirectory.
   include("C:/Users/manut/Documentos/UNIVERSIDAD/2025/Sistemas_Embebidos/proyecto-final-tauro-aguirre/build/esp-idf/main/cmake_install.cmake")
 endif()
 
