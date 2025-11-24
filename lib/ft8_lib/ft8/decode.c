@@ -466,7 +466,7 @@ static void ft8_extract_symbol(const uint8_t* wf, float* logl)
 }
 
 // Compute unnormalized log likelihood log(p(1) / p(0)) of bits corresponding to several FSK symbols at once
-static void ft8_decode_multi_symbols(const uint8_t* wf, int num_bins, int n_syms, int bit_idx, float* log174)
+static void __attribute__((unused)) ft8_decode_multi_symbols(const uint8_t* wf, int num_bins, int n_syms, int bit_idx, float* log174)
 {
     const int n_bits = 3 * n_syms;
     const int n_tones = (1 << n_bits);

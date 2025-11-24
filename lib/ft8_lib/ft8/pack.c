@@ -31,7 +31,7 @@ int32_t pack28(const char* callsign)
 
     if (starts_with(callsign, "CQ_"))
     {
-        int nnum = 0, nlet = 0;
+        // int nnum = 0, nlet = 0;
 
         // TODO:
     }

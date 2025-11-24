@@ -26,7 +26,7 @@ static dac_continuous_handle_t dac_handle = NULL;
 esp_err_t audio_driver_init(void)
 {
     ESP_LOGI(TAG, "Inicializando Audio Driver (ADC/DAC Internos)...");
-    esp_err_t ret;
+    // esp_err_t ret;
 
     // 1. Inicializar ADC Continuous (RX)
     adc_continuous_handle_cfg_t adc_config = {
