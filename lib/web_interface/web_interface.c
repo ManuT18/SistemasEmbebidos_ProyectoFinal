@@ -17,6 +17,8 @@
 #include "lwip/err.h"
 #include "lwip/sys.h"
 #include "driver/gpio.h"
+#include <sys/time.h>
+#include <time.h>
 
 // --- TUS DATOS DE RED ---
 #define NOMBRE_RED      "ESP32-FT8-Modem"
@@ -31,10 +33,21 @@ static const char *TAG = "WEB_IF";
 static httpd_handle_t server = NULL;
 // Handle del cliente WebSocket (asumimos uno solo por simplicidad para este prototipo)
 static int g_client_fd = -1;
+// Callback de login
+static web_login_cb_t g_login_cb = NULL;
+// Callbacks de proveedores de datos
+static web_get_data_cb_t g_get_call_cb = NULL;
+static web_get_data_cb_t g_get_grid_cb = NULL;
+
+/* ... (WiFi functions omitted for brevity) ... */
 
 /* ===============================================================
-   1. GESTIÓN DE WI-FI (AP)
+   2. SERVIDOR WEB Y WEBSOCKETS
    =============================================================== */
+
+// ... (HTML handler omitted) ...
+
+
 static void wifi_event_handler(void* arg, esp_event_base_t event_base,
                                 int32_t event_id, void* event_data)
 {
@@ -89,47 +102,14 @@ static void iniciar_wifi_ap(void)
    2. SERVIDOR WEB Y WEBSOCKETS
    =============================================================== */
 
-const char* html_page = 
-    "<!DOCTYPE html><html><head><meta charset='utf-8'>"
-    "<meta name='viewport' content='width=device-width, initial-scale=1'>"
-    "<title>Modem FT8</title>"
-    "<style>"
-    " body { background:#111; color:#0f0; font-family:monospace; text-align:center; }"
-    " #container { display: flex; justify-content: center; align-items: flex-start; gap: 20px; padding: 20px; }"
-    " #log { border:1px solid #333; height:300px; width: 60%; overflow:auto; padding:10px; text-align:left; background:#000; }"
-    " #controls { display: flex; flex-direction: column; gap: 10px; }"
-    " button { padding: 10px 20px; background: #0f0; color: #000; border: none; cursor: pointer; font-weight: bold; }"
-    " button:hover { background: #0a0; }"
-    "</style></head>"
-    "<body>"
-    " <h1>📡 Monitor FT8</h1>"
-    " <div id='container'>"
-    "   <div id='log'>Esperando conexión...</div>"
-    "   <div id='controls'>"
-    "     <button onclick='toggleLed()'>💡 Toggle LED</button>"
-    "   </div>"
-    " </div>"
-    " <script>"
-    "   var socket = new WebSocket('ws://' + location.hostname + '/ws');"
-    "   socket.onopen = function() { "
-    "       document.getElementById('log').innerHTML = '<p>✅ Conectado al ESP32</p>'; "
-    "       socket.send('Hola ESP32, soy el Celular');"
-    "   };"
-    "   socket.onmessage = function(event) { "
-    "       var log = document.getElementById('log');"
-    "       log.innerHTML += '<p>' + event.data + '</p>';"
-    "       log.scrollTop = log.scrollHeight;"
-    "   };"
-    "   function toggleLed() {"
-    "       socket.send('TOGGLE_LED');"
-    "   }"
-    " </script>"
-    "</body></html>";
+// Referencias al archivo HTML embebido
+extern const uint8_t index_html_start[] asm("_binary_index_html_start");
+extern const uint8_t index_html_end[]   asm("_binary_index_html_end");
 
 // Handler de la página web "/"
 static esp_err_t pagina_inicio_handler(httpd_req_t *req)
 {
-    httpd_resp_send(req, html_page, HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send(req, (const char *)index_html_start, index_html_end - index_html_start);
     return ESP_OK;
 }
 
@@ -166,18 +146,75 @@ static esp_err_t echo_handler(httpd_req_t *req)
         // Actualizamos el FD del cliente activo
         g_client_fd = httpd_req_to_sockfd(req);
 
-        // Lógica de Control de LED
-        if (strcmp((char*)ws_pkt.payload, "TOGGLE_LED") == 0) {
+        // Lógica de Mensajes
+        char *payload = (char*)ws_pkt.payload;
+        
+        if (strcmp(payload, "TOGGLE_LED") == 0) {
             static int led_state = 0;
             led_state = !led_state;
             gpio_set_level(LED_GPIO, led_state);
             
             const char* msg = led_state ? "LED ENCENDIDO" : "LED APAGADO";
             web_interface_send_log(msg);
+            
+        } else if (strncmp(payload, "LOGIN:", 6) == 0) {
+            // Formato: LOGIN:CALLSIGN:GRID
+            char *call = strtok(payload + 6, ":");
+            char *grid = strtok(NULL, ":");
+            
+            if (call && grid) {
+                ESP_LOGI(TAG, "Login recibido: %s / %s", call, grid);
+                if (g_login_cb) {
+                    g_login_cb(call, grid);
+                }
+                web_interface_send_log("Login OK. Datos recibidos.");
+            }
+            
+        } else if (strncmp(payload, "SYNC_TIME:", 10) == 0) {
+            long timestamp = atol(payload + 10);
+            if (timestamp > 0) {
+                struct timeval tv;
+                tv.tv_sec = timestamp;
+                tv.tv_usec = 0;
+                settimeofday(&tv, NULL);
+
+                // Obtener hora actual UTC
+                time_t now;
+                struct tm timeinfo;
+                time(&now);
+                gmtime_r(&now, &timeinfo);
+                
+                char time_str[64];
+                strftime(time_str, sizeof(time_str), "Tiempo sincronizado: %H:%M:%S", &timeinfo);
+                web_interface_send_log(time_str);
+            }
+
+        } else if (strcmp(payload, "GET_CALLSIGN") == 0) {
+            if (g_get_call_cb) {
+                char buf[32];
+                g_get_call_cb(buf, sizeof(buf));
+                char msg[64];
+                snprintf(msg, sizeof(msg), "Callsign actual: %s", buf);
+                web_interface_send_log(msg);
+            } else {
+                web_interface_send_log("Error: Proveedor de Callsign no registrado");
+            }
+            
+        } else if (strcmp(payload, "GET_GRID") == 0) {
+            if (g_get_grid_cb) {
+                char buf[32];
+                g_get_grid_cb(buf, sizeof(buf));
+                char msg[64];
+                snprintf(msg, sizeof(msg), "Grid actual: %s", buf);
+                web_interface_send_log(msg);
+            } else {
+                web_interface_send_log("Error: Proveedor de Grid no registrado");
+            }
+
         } else {
             // Echo normal
             char respuesta[100];
-            sprintf(respuesta, "ESP32 Recibió: %s", (char*)ws_pkt.payload);
+            sprintf(respuesta, "ESP32 Recibió: %s", payload);
             
             // Reutilizamos ws_pkt para enviar
             ws_pkt.payload = (uint8_t*)respuesta;
@@ -240,6 +277,17 @@ void web_interface_init(void)
 
     iniciar_wifi_ap();
     start_webserver();
+}
+
+void web_interface_set_login_callback(web_login_cb_t cb)
+{
+    g_login_cb = cb;
+}
+
+void web_interface_register_data_providers(web_get_data_cb_t get_call, web_get_data_cb_t get_grid)
+{
+    g_get_call_cb = get_call;
+    g_get_grid_cb = get_grid;
 }
 
 void web_interface_send_log(const char *msg)

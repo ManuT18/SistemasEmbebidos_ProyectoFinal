@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset='utf-8'>
+    <meta name='viewport' content='width=device-width, initial-scale=1'>
+    <title>Modem FT8</title>
+    <style>
+        body { background:#111; color:#0f0; font-family:monospace; text-align:center; }
+        #container { display: flex; justify-content: center; align-items: flex-start; gap: 20px; padding: 20px; }
+        #log { border:1px solid #333; height:300px; width: 60%; overflow:auto; padding:10px; text-align:left; background:#000; }
+        #controls { display: flex; flex-direction: column; gap: 10px; }
+        button { padding: 10px 20px; background: #0f0; color: #000; border: none; cursor: pointer; font-weight: bold; }
+        button:hover { background: #0a0; }
+        
+        /* Login Screen Styles */
+        #login-screen { display: flex; flex-direction: column; align-items: center; gap: 15px; margin-top: 50px; }
+        input { padding: 10px; background: #222; color: #0f0; border: 1px solid #0f0; text-transform: uppercase; }
+        .hidden { display: none !important; }
+        #logout-btn {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            width: 30px;
+            height: 30px;
+            background: red;
+            color: white;
+            border: none;
+            font-weight: bold;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+    </style>
+</head>
+<body>
+    <h1>📡 Monitor FT8</h1>
+    
+    <!-- Login Screen -->
+    <div id="login-screen">
+        <h2>Identificación de Operador</h2>
+        <input type="text" id="callsign" placeholder="Señal Distintiva (ej. LU7AA)">
+        <input type="text" id="grid" placeholder="Grid Locator (ej. GF05)">
+        <button onclick="login()">INICIAR</button>
+    </div>
+
+    <!-- Main Screen -->
+    <div id="main-screen" class="hidden">
+        <button id="logout-btn" onclick="logout()">X</button>
+        <h2 id='clock-display'>HORA ACTUAL (UTC): --:--:--</h2>
+        <div id='container'>
+            <div id='log'>Esperando conexión...</div>
+            <div id='controls'>
+                <button onclick='toggleLed()'>💡 Toggle LED</button>
+                <button onclick='getCallsign()'>📡 Consultar Señal</button>
+                <button onclick='getGrid()'>🗺️ Consultar Grid</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        var socket = new WebSocket('ws://' + location.hostname + '/ws');
+        
+        socket.onopen = function() { 
+            document.getElementById('log').innerHTML = '<p>✅ Conectado al ESP32</p>'; 
+            syncTime();
+            
+            // Auto-login
+            var savedCall = localStorage.getItem('callsign');
+            var savedGrid = localStorage.getItem('grid');
+            if (savedCall && savedGrid) {
+                socket.send("LOGIN:" + savedCall + ":" + savedGrid);
+                document.getElementById('login-screen').classList.add('hidden');
+                document.getElementById('main-screen').classList.remove('hidden');
+            }
+        };
+        
+        socket.onmessage = function(event) { 
+            var log = document.getElementById('log');
+            log.innerHTML += '<p>' + event.data + '</p>';
+            log.scrollTop = log.scrollHeight;
+        };
+
+        function login() {
+            var call = document.getElementById('callsign').value.toUpperCase().trim();
+            var grid = document.getElementById('grid').value.toUpperCase().trim();
+
+            if (call === "" || grid === "") {
+                alert("Por favor complete ambos campos.");
+                return;
+            }
+
+            // Save session
+            localStorage.setItem('callsign', call);
+            localStorage.setItem('grid', grid);
+
+            // Send login data to ESP32
+            socket.send("LOGIN:" + call + ":" + grid);
+
+            // Switch views
+            document.getElementById('login-screen').classList.add('hidden');
+            document.getElementById('main-screen').classList.remove('hidden');
+        }
+
+        function logout() {
+            localStorage.removeItem('callsign');
+            localStorage.removeItem('grid');
+            location.reload();
+        }
+
+        function toggleLed() {
+            socket.send('TOGGLE_LED');
+        }
+
+        function getCallsign() {
+            socket.send('GET_CALLSIGN');
+        }
+
+        function getGrid() {
+            socket.send('GET_GRID');
+        }
+
+        function syncTime() {
+            var now = Math.floor(Date.now() / 1000);
+            socket.send('SYNC_TIME:' + now);
+        }
+
+        function updateClock() {
+            var now = new Date();
+            var hours = String(now.getUTCHours()).padStart(2, '0');
+            var minutes = String(now.getUTCMinutes()).padStart(2, '0');
+            var seconds = String(now.getUTCSeconds()).padStart(2, '0');
+            var millis = String(Math.floor(now.getUTCMilliseconds() / 10)).padStart(2, '0');
+            
+            document.getElementById('clock-display').innerText = 
+                "HORA ACTUAL (UTC): " + hours + ":" + minutes + ":" + seconds + "." + millis;
+        }
+
+        // Sincronizar tiempo cada 60 segundos
+        setInterval(syncTime, 60000);
+        // Actualizar reloj localmente cada 50ms
+        setInterval(updateClock, 50);
+    </script>
+</body>
+</html>
