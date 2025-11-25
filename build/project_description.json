@@ -1,7 +1,7 @@
 {
     "version":            "1.2",
     "project_name":       "proyecto-final-tauro-aguirre",
-    "project_version":    "b88d124-dirty",
+    "project_version":    "e27adb1-dirty",
     "project_path":       "C:/Users/manut/Documentos/UNIVERSIDAD/2025/Sistemas_Embebidos/proyecto-final-tauro-aguirre",
     "idf_path":           "C:/Users/manut/ESP-IDF/v5.5.1/esp-idf",
     "build_dir":          "C:/Users/manut/Documentos/UNIVERSIDAD/2025/Sistemas_Embebidos/proyecto-final-tauro-aguirre/build",
