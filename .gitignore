@@ -3,3 +3,17 @@ managed_components/
 dependencies.lock
 sdkconfig
 sdkconfig.old
+
+# Binaries
+*.elf
+*.bin
+*.map
+*.hex
+
+# IDE
+.vscode/
+.idea/
+
+# ESP-IDF specific
+sdkconfig.ci
+idfdata

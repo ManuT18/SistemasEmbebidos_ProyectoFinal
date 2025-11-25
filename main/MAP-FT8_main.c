@@ -6,30 +6,29 @@
 #include "esp_log.h"
 #include "esp_system.h"
 #include "audio_driver.h"
-
-// Includes de FT8
 #include "kiss_fftr.h"
 #include "ft8/decode.h"
 #include "ft8/constants.h"
 
+/* --- Configuración de Tareas y FT8 --- */
 #define FT8_TASK_STACK_SIZE 8192
 #define FT8_TASK_PRIORITY   5
+#define FT8_SAMPLE_RATE     12000
+#define FFT_SIZE            1920 
+#define NUM_BINS            (FFT_SIZE / 2 + 1)
 
-// Descomentar para activar modo prueba con archivo WAV embebido
+/* --- Configuración de Modo Prueba (WAV Embebido) --- 
+ * Descomentar para probar con archivos WAV embebidos en el binario */
 #define TEST_MODE_WAV 
 
 #ifdef TEST_MODE_WAV
-// Símbolos generados por el linker para los archivos embebidos
-// Nota: CMake reemplaza puntos y barras con guiones bajos
+/* Definición de archivos WAV embebidos en el binario */
 extern const uint8_t _binary_191111_110130_wav_start[];
 extern const uint8_t _binary_191111_110130_wav_end[];
-
 extern const uint8_t _binary_191111_110145_wav_start[];
 extern const uint8_t _binary_191111_110145_wav_end[];
-
 extern const uint8_t _binary_191111_110200_wav_start[];
 extern const uint8_t _binary_191111_110200_wav_end[];
-
 extern const uint8_t _binary_191111_110215_wav_start[];
 extern const uint8_t _binary_191111_110215_wav_end[];
 
@@ -48,33 +47,33 @@ static const test_file_t test_files[] = {
 static const int num_test_files = sizeof(test_files) / sizeof(test_files[0]);
 #endif
 
-// Configuración FT8
-#define FT8_SAMPLE_RATE 12000
-#define FFT_SIZE        1920 // 12000 Hz * 0.160 s = 1920 muestras por símbolo
-#define NUM_BINS        (FFT_SIZE / 2 + 1)
-
-// Variables globales para FFT y Waterfall
+/* --- Variables Globales de Procesamiento (FFT) --- */
 static kiss_fftr_cfg fft_cfg;
 static float window[FFT_SIZE];
 
+/* 
+ * Tarea Principal FT8:
+ * 1. Inicializa estructuras FFT y Waterfall.
+ * 2. Bucle infinito: Captura audio (15s) -> Procesa FFT -> Decodifica mensajes.
+ */
 void ft8_task(void *pvParameters)
 {
     ESP_LOGI("FT8_TASK", "Tarea FT8 iniciada");
 
-    // 1. Inicializar FFT
+    /* Inicialización de recursos para DSP */
     fft_cfg = kiss_fftr_alloc(FFT_SIZE, 0, NULL, NULL);
     if (fft_cfg == NULL) {
-        ESP_LOGE("FT8_TASK", "Error al asignar memoria para FFT");
+        ESP_LOGE("FT8_TASK", "Fallo alloc FFT");
         vTaskDelete(NULL);
     }
 
-    // 2. Pre-calcular ventana de Hanning
+    /* Pre-cálculo de Ventana Hanning para suavizado de FFT */
     for (int i = 0; i < FFT_SIZE; i++) {
         window[i] = 0.5f * (1.0f - cosf(2.0f * M_PI * i / (FFT_SIZE - 1)));
     }
 
-    // 3. Inicializar Waterfall
-    const int num_blocks = 87; 
+    /* Configuración del Waterfall (Espectrograma) */
+    const int num_blocks = 87; // Bloques de tiempo por slot
     waterfall_t power = {
         .num_blocks = num_blocks,
         .num_bins = NUM_BINS,
@@ -85,24 +84,14 @@ void ft8_task(void *pvParameters)
     power.mag = malloc(num_blocks * NUM_BINS * sizeof(uint8_t));
     power.protocol = PROTO_FT8; 
 
-    if (power.mag == NULL) {
-        ESP_LOGE("FT8_TASK", "Error al asignar memoria para Waterfall");
-        free(fft_cfg);
-        vTaskDelete(NULL);
-    }
-
-    // Buffers temporales
+    /* Buffers de Audio y FFT */
     int16_t *audio_buf = malloc(FFT_SIZE * sizeof(int16_t));
     kiss_fft_scalar *fft_in = malloc(FFT_SIZE * sizeof(kiss_fft_scalar));
     kiss_fft_cpx *fft_out = malloc(NUM_BINS * sizeof(kiss_fft_cpx));
 
-    if (!audio_buf || !fft_in || !fft_out) {
-        ESP_LOGE("FT8_TASK", "Error de memoria en buffers temporales");
-        if(audio_buf) free(audio_buf);
-        if(fft_in) free(fft_in);
-        if(fft_out) free(fft_out);
-        free(power.mag);
-        free(fft_cfg);
+    if (!power.mag || !audio_buf || !fft_in || !fft_out) {
+        ESP_LOGE("FT8_TASK", "Fallo alloc buffers");
+        // Liberación segura omitida por brevedad en error fatal
         vTaskDelete(NULL);
     }
 
@@ -110,124 +99,118 @@ void ft8_task(void *pvParameters)
     int current_file_idx = 0;
 
 #ifdef TEST_MODE_WAV
-    ESP_LOGW("FT8_TASK", "MODO TEST ACTIVADO: Leyendo audio desde memoria flash");
-    
-    // Variables de estado para el archivo actual
+    /* Configuración inicial para lectura de primer archivo WAV */
     const uint8_t *wav_start = test_files[current_file_idx].start;
     const uint8_t *wav_end = test_files[current_file_idx].end;
-    size_t wav_pos = 44; // Saltar header WAV típico
+    size_t wav_pos = 44; // Saltar header WAV (44 bytes)
     size_t wav_size = wav_end - wav_start;
     
-    printf("\n--- Procesando archivo: %s ---\n", test_files[current_file_idx].name);
+    uint32_t wav_sample_rate = *((uint32_t*)(wav_start + 24));
+    printf("\n--- Procesando: %s (SR: %lu Hz) ---\n", test_files[current_file_idx].name, wav_sample_rate);
 #endif
 
     while (1) {
-        // Limpiar waterfall
+        /* Limpiar waterfall para nuevo ciclo */
         memset(power.mag, 0, num_blocks * NUM_BINS);
 
-        // --- FASE 1: CAPTURA Y FFT ---
-        // ESP_LOGI("FT8_TASK", "Capturando audio..."); // Comentado para limpiar salida en test
+        /* --- FASE 1: Captura y Procesamiento FFT (Tiempo Real Simulado) --- */
         for (int i = 0; i < num_blocks; i++) {
             
 #ifdef TEST_MODE_WAV
+            /* Lectura desde Memoria Flash (Modo Test) */
             size_t bytes_to_read = FFT_SIZE * sizeof(int16_t);
             
-            // Verificar si llegamos al final del archivo actual
             if (wav_pos + bytes_to_read > wav_size) {
-                // Rellenar con ceros si falta un poco al final
-                memset(audio_buf, 0, bytes_to_read);
+                memset(audio_buf, 0, bytes_to_read); // Rellenar silencio si acaba archivo
             } else {
                 memcpy(audio_buf, wav_start + wav_pos, bytes_to_read);
                 wav_pos += bytes_to_read;
             }
-            
-            // Simular tiempo de captura (muy acelerado para pruebas masivas)
-            vTaskDelay(pdMS_TO_TICKS(1)); 
+            vTaskDelay(pdMS_TO_TICKS(1)); // Delay mínimo para evitar bloqueo CPU
 #else
-            // Leer del ADC
-            esp_err_t ret = audio_read(audio_buf, FFT_SIZE, &bytes_read);
-            if (ret != ESP_OK) {
-                ESP_LOGW("FT8_TASK", "Error leyendo audio");
+            /* Lectura desde ADC (Hardware Real) */
+            if (audio_read(audio_buf, FFT_SIZE, &bytes_read) != ESP_OK) {
                 continue;
             }
 #endif
 
-            // Aplicar ventana y convertir a float para FFT
+            /* Aplicar Ventana y FFT */
             for (int j = 0; j < FFT_SIZE; j++) {
                 fft_in[j] = ((float)audio_buf[j]) * window[j];
             }
-
-            // Ejecutar FFT
             kiss_fftr(fft_cfg, fft_in, fft_out);
 
-            // Calcular magnitud (dB) y guardar en waterfall
+            /* Calcular Magnitud (dB) y guardar en Waterfall */
             for (int j = 0; j < NUM_BINS; j++) {
                 float mag = sqrtf(fft_out[j].r * fft_out[j].r + fft_out[j].i * fft_out[j].i);
                 float db = 10.0f * log10f(mag + 1e-9f); 
-                int val = (int)(db * 2.0f); 
+                int val = (int)(db * 2.0f); // Escalar para uint8
                 if (val < 0) val = 0;
                 if (val > 255) val = 255;
-                
                 power.mag[i * NUM_BINS + j] = (uint8_t)val;
             }
         }
 
-        // --- FASE 2: DECODIFICACIÓN ---
-        // ESP_LOGI("FT8_TASK", "Decodificando...");
-        
+        /* --- FASE 2: Decodificación FT8 --- */
         const int max_candidates = 10;
         candidate_t heap[10];
         int num_candidates = ft8_find_sync(&power, max_candidates, heap, 0);
 
-        // Salida formateada solicitada
-        printf("INFORMACION DECODIFICADA\n");
+        printf("INFORMACION DECODIFICADA (Candidatos: %d)\n", num_candidates);
 
         for (int i = 0; i < num_candidates; i++) {
+            vTaskDelay(pdMS_TO_TICKS(10)); // Prevenir Watchdog
+
             message_t msg;
             decode_status_t status;
             
             if (ft8_decode(&power, &heap[i], &msg, 20, &status)) {
                 printf("MENSAJE: %s | SNR: %d | DT: %.2f\n", 
-                         msg.text, 
-                         heap[i].score, 
-                         (float)heap[i].time_offset * FT8_SYMBOL_PERIOD);
+                         msg.text, heap[i].score, (float)heap[i].time_offset * FT8_SYMBOL_PERIOD);
+            } else {
+                printf("FALLO: SNR=%d | LDPC=%d CRC=0x%04x/0x%04x\n",
+                        heap[i].score, status.ldpc_errors, status.crc_extracted, status.crc_calculated);
             }
         }
-        printf("\n"); // Separador
+        printf("\n");
 
 #ifdef TEST_MODE_WAV
-        // Pasar al siguiente archivo
+        /* Lógica de cambio de archivo para Test */
         current_file_idx++;
         if (current_file_idx < num_test_files) {
             wav_start = test_files[current_file_idx].start;
             wav_end = test_files[current_file_idx].end;
             wav_pos = 44;
             wav_size = wav_end - wav_start;
-            printf("--- Procesando archivo: %s ---\n", test_files[current_file_idx].name);
+            
+            uint32_t next_sr = *((uint32_t*)(wav_start + 24));
+            printf("--- Procesando: %s (SR: %lu Hz) ---\n", test_files[current_file_idx].name, next_sr);
         } else {
             printf("TEST FINALIZADO\n");
-            vTaskSuspend(NULL); // Detener la tarea
+            vTaskSuspend(NULL);
         }
 #else
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        vTaskDelay(pdMS_TO_TICKS(1000)); // Esperar siguiente slot en modo real
 #endif
     }
 }
 
+/* 
+ * Punto de Entrada de la Aplicación:
+ * Inicializa hardware (si no es test) y lanza la tarea de procesamiento.
+ */
 void app_main(void)
 {
     ESP_LOGI("MAP-FT8", "Iniciando aplicación MAP-FT8...");
 
-    // 1. Inicializar Hardware de Audio
 #ifndef TEST_MODE_WAV
     if (audio_driver_init() != ESP_OK) {
-        ESP_LOGE("MAP-FT8", "Fallo al inicializar audio. Abortando.");
+        ESP_LOGE("MAP-FT8", "Fallo init audio");
         return;
     }
 #else
-    ESP_LOGW("MAP-FT8", "Modo Test: Saltando inicialización de hardware de audio");
+    ESP_LOGW("MAP-FT8", "Modo Test: Audio Hardware desactivado");
 #endif
 
-    // 2. Crear Tarea Principal de Procesamiento
     xTaskCreate(ft8_task, "ft8_task", FT8_TASK_STACK_SIZE, NULL, FT8_TASK_PRIORITY, NULL);
 }
