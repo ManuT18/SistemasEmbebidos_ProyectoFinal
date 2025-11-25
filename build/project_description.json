@@ -1,12 +1,12 @@
 {
     "version":            "1.2",
     "project_name":       "proyecto-final-tauro-aguirre",
-    "project_version":    "e27adb1-dirty",
+    "project_version":    "6daec33-dirty",
     "project_path":       "C:/Users/manut/Documentos/UNIVERSIDAD/2025/Sistemas_Embebidos/proyecto-final-tauro-aguirre",
     "idf_path":           "C:/Users/manut/ESP-IDF/v5.5.1/esp-idf",
     "build_dir":          "C:/Users/manut/Documentos/UNIVERSIDAD/2025/Sistemas_Embebidos/proyecto-final-tauro-aguirre/build",
     "config_file":        "C:/Users/manut/Documentos/UNIVERSIDAD/2025/Sistemas_Embebidos/proyecto-final-tauro-aguirre/sdkconfig",
-    "config_defaults":    "",
+    "config_defaults":    "C:/Users/manut/Documentos/UNIVERSIDAD/2025/Sistemas_Embebidos/proyecto-final-tauro-aguirre/sdkconfig.defaults",
     "bootloader_elf":     "C:/Users/manut/Documentos/UNIVERSIDAD/2025/Sistemas_Embebidos/proyecto-final-tauro-aguirre/build/bootloader/bootloader.elf",
     "app_elf":            "proyecto-final-tauro-aguirre.elf",
     "app_bin":            "proyecto-final-tauro-aguirre.bin",
@@ -730,7 +730,7 @@
             "managed_reqs": [],
             "managed_priv_reqs": [],
             "file": "C:/Users/manut/Documentos/UNIVERSIDAD/2025/Sistemas_Embebidos/proyecto-final-tauro-aguirre/build/esp-idf/main/libmain.a",
-            "sources": [ "C:/Users/manut/Documentos/UNIVERSIDAD/2025/Sistemas_Embebidos/proyecto-final-tauro-aguirre/main/MAP-FT8_main.c", "C:/Users/manut/Documentos/UNIVERSIDAD/2025/Sistemas_Embebidos/proyecto-final-tauro-aguirre/main/audio_driver.c", "C:/Users/manut/Documentos/UNIVERSIDAD/2025/Sistemas_Embebidos/proyecto-final-tauro-aguirre/build/191111_110130.wav.S" ],
+            "sources": [ "C:/Users/manut/Documentos/UNIVERSIDAD/2025/Sistemas_Embebidos/proyecto-final-tauro-aguirre/main/MAP-FT8_main.c", "C:/Users/manut/Documentos/UNIVERSIDAD/2025/Sistemas_Embebidos/proyecto-final-tauro-aguirre/main/audio_driver.c", "C:/Users/manut/Documentos/UNIVERSIDAD/2025/Sistemas_Embebidos/proyecto-final-tauro-aguirre/build/191111_110130.wav.S", "C:/Users/manut/Documentos/UNIVERSIDAD/2025/Sistemas_Embebidos/proyecto-final-tauro-aguirre/build/191111_110145.wav.S", "C:/Users/manut/Documentos/UNIVERSIDAD/2025/Sistemas_Embebidos/proyecto-final-tauro-aguirre/build/191111_110200.wav.S", "C:/Users/manut/Documentos/UNIVERSIDAD/2025/Sistemas_Embebidos/proyecto-final-tauro-aguirre/build/191111_110215.wav.S" ],
             "include_dirs": []
         },
         "mbedtls": {

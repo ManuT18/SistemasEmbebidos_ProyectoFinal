@@ -19,9 +19,33 @@
 #define TEST_MODE_WAV 
 
 #ifdef TEST_MODE_WAV
-// Símbolos generados por el linker para el archivo embebido
+// Símbolos generados por el linker para los archivos embebidos
+// Nota: CMake reemplaza puntos y barras con guiones bajos
 extern const uint8_t _binary_191111_110130_wav_start[];
 extern const uint8_t _binary_191111_110130_wav_end[];
+
+extern const uint8_t _binary_191111_110145_wav_start[];
+extern const uint8_t _binary_191111_110145_wav_end[];
+
+extern const uint8_t _binary_191111_110200_wav_start[];
+extern const uint8_t _binary_191111_110200_wav_end[];
+
+extern const uint8_t _binary_191111_110215_wav_start[];
+extern const uint8_t _binary_191111_110215_wav_end[];
+
+typedef struct {
+    const char* name;
+    const uint8_t* start;
+    const uint8_t* end;
+} test_file_t;
+
+static const test_file_t test_files[] = {
+    { "191111_110130.wav", _binary_191111_110130_wav_start, _binary_191111_110130_wav_end },
+    { "191111_110145.wav", _binary_191111_110145_wav_start, _binary_191111_110145_wav_end },
+    { "191111_110200.wav", _binary_191111_110200_wav_start, _binary_191111_110200_wav_end },
+    { "191111_110215.wav", _binary_191111_110215_wav_start, _binary_191111_110215_wav_end }
+};
+static const int num_test_files = sizeof(test_files) / sizeof(test_files[0]);
 #endif
 
 // Configuración FT8
@@ -82,43 +106,43 @@ void ft8_task(void *pvParameters)
         vTaskDelete(NULL);
     }
 
-    size_t bytes_read = 0;
+    size_t __attribute__((unused)) bytes_read = 0;
+    int current_file_idx = 0;
 
 #ifdef TEST_MODE_WAV
     ESP_LOGW("FT8_TASK", "MODO TEST ACTIVADO: Leyendo audio desde memoria flash");
-    const uint8_t *wav_start = _binary_191111_110130_wav_start;
-    const uint8_t *wav_end = _binary_191111_110130_wav_end;
+    
+    // Variables de estado para el archivo actual
+    const uint8_t *wav_start = test_files[current_file_idx].start;
+    const uint8_t *wav_end = test_files[current_file_idx].end;
     size_t wav_pos = 44; // Saltar header WAV típico
     size_t wav_size = wav_end - wav_start;
+    
+    printf("\n--- Procesando archivo: %s ---\n", test_files[current_file_idx].name);
 #endif
 
     while (1) {
-        ESP_LOGI("FT8_TASK", "Esperando inicio de ciclo...");
-        // TODO: Sincronizar con PPS/RTC.
-        
         // Limpiar waterfall
         memset(power.mag, 0, num_blocks * NUM_BINS);
 
         // --- FASE 1: CAPTURA Y FFT ---
-        ESP_LOGI("FT8_TASK", "Capturando audio...");
+        // ESP_LOGI("FT8_TASK", "Capturando audio..."); // Comentado para limpiar salida en test
         for (int i = 0; i < num_blocks; i++) {
             
 #ifdef TEST_MODE_WAV
             size_t bytes_to_read = FFT_SIZE * sizeof(int16_t);
             
-            // Verificar si llegamos al final del archivo
+            // Verificar si llegamos al final del archivo actual
             if (wav_pos + bytes_to_read > wav_size) {
-                wav_pos = 44; // Reiniciar
-                ESP_LOGI("FT8_TASK", "Reiniciando reproducción de WAV");
+                // Rellenar con ceros si falta un poco al final
+                memset(audio_buf, 0, bytes_to_read);
+            } else {
+                memcpy(audio_buf, wav_start + wav_pos, bytes_to_read);
+                wav_pos += bytes_to_read;
             }
-
-            // Copiar datos desde flash al buffer de audio
-            // Nota: El WAV debe ser 16-bit mono Little Endian, igual que lo que espera el buffer
-            memcpy(audio_buf, wav_start + wav_pos, bytes_to_read);
-            wav_pos += bytes_to_read;
             
-            // Simular tiempo de captura (acelerado para pruebas)
-            vTaskDelay(pdMS_TO_TICKS(10)); 
+            // Simular tiempo de captura (muy acelerado para pruebas masivas)
+            vTaskDelay(pdMS_TO_TICKS(1)); 
 #else
             // Leer del ADC
             esp_err_t ret = audio_read(audio_buf, FFT_SIZE, &bytes_read);
@@ -149,27 +173,44 @@ void ft8_task(void *pvParameters)
         }
 
         // --- FASE 2: DECODIFICACIÓN ---
-        ESP_LOGI("FT8_TASK", "Decodificando...");
+        // ESP_LOGI("FT8_TASK", "Decodificando...");
         
         const int max_candidates = 10;
         candidate_t heap[10];
         int num_candidates = ft8_find_sync(&power, max_candidates, heap, 0);
 
-        ESP_LOGI("FT8_TASK", "Candidatos encontrados: %d", num_candidates);
+        // Salida formateada solicitada
+        printf("INFORMACION DECODIFICADA\n");
 
         for (int i = 0; i < num_candidates; i++) {
             message_t msg;
             decode_status_t status;
             
             if (ft8_decode(&power, &heap[i], &msg, 20, &status)) {
-                ESP_LOGI("FT8_DECODE", "MENSAJE: %s | SNR: %d | DT: %.2f", 
+                printf("MENSAJE: %s | SNR: %d | DT: %.2f\n", 
                          msg.text, 
                          heap[i].score, 
                          (float)heap[i].time_offset * FT8_SYMBOL_PERIOD);
             }
         }
+        printf("\n"); // Separador
 
+#ifdef TEST_MODE_WAV
+        // Pasar al siguiente archivo
+        current_file_idx++;
+        if (current_file_idx < num_test_files) {
+            wav_start = test_files[current_file_idx].start;
+            wav_end = test_files[current_file_idx].end;
+            wav_pos = 44;
+            wav_size = wav_end - wav_start;
+            printf("--- Procesando archivo: %s ---\n", test_files[current_file_idx].name);
+        } else {
+            printf("TEST FINALIZADO\n");
+            vTaskSuspend(NULL); // Detener la tarea
+        }
+#else
         vTaskDelay(pdMS_TO_TICKS(1000));
+#endif
     }
 }
 
