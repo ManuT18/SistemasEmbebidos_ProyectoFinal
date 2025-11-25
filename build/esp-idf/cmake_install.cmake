@@ -304,6 +304,11 @@ endif()
 
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   # Include the install script for the subdirectory.
+  include("C:/Users/manut/Documentos/UNIVERSIDAD/2025/Sistemas_Embebidos/proyecto-final-tauro-aguirre/build/esp-idf/ft8_lib/cmake_install.cmake")
+endif()
+
+if(NOT CMAKE_INSTALL_LOCAL_ONLY)
+  # Include the install script for the subdirectory.
   include("C:/Users/manut/Documentos/UNIVERSIDAD/2025/Sistemas_Embebidos/proyecto-final-tauro-aguirre/build/esp-idf/main/cmake_install.cmake")
 endif()
 

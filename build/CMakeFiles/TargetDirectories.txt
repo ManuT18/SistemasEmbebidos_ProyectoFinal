@@ -492,6 +492,13 @@ C:/Users/manut/Documentos/UNIVERSIDAD/2025/Sistemas_Embebidos/proyecto-final-tau
 C:/Users/manut/Documentos/UNIVERSIDAD/2025/Sistemas_Embebidos/proyecto-final-tauro-aguirre/build/esp-idf/esp_adc/CMakeFiles/install.dir
 C:/Users/manut/Documentos/UNIVERSIDAD/2025/Sistemas_Embebidos/proyecto-final-tauro-aguirre/build/esp-idf/esp_adc/CMakeFiles/install/local.dir
 C:/Users/manut/Documentos/UNIVERSIDAD/2025/Sistemas_Embebidos/proyecto-final-tauro-aguirre/build/esp-idf/esp_adc/CMakeFiles/install/strip.dir
+C:/Users/manut/Documentos/UNIVERSIDAD/2025/Sistemas_Embebidos/proyecto-final-tauro-aguirre/build/esp-idf/ft8_lib/CMakeFiles/__idf_ft8_lib.dir
+C:/Users/manut/Documentos/UNIVERSIDAD/2025/Sistemas_Embebidos/proyecto-final-tauro-aguirre/build/esp-idf/ft8_lib/CMakeFiles/edit_cache.dir
+C:/Users/manut/Documentos/UNIVERSIDAD/2025/Sistemas_Embebidos/proyecto-final-tauro-aguirre/build/esp-idf/ft8_lib/CMakeFiles/rebuild_cache.dir
+C:/Users/manut/Documentos/UNIVERSIDAD/2025/Sistemas_Embebidos/proyecto-final-tauro-aguirre/build/esp-idf/ft8_lib/CMakeFiles/list_install_components.dir
+C:/Users/manut/Documentos/UNIVERSIDAD/2025/Sistemas_Embebidos/proyecto-final-tauro-aguirre/build/esp-idf/ft8_lib/CMakeFiles/install.dir
+C:/Users/manut/Documentos/UNIVERSIDAD/2025/Sistemas_Embebidos/proyecto-final-tauro-aguirre/build/esp-idf/ft8_lib/CMakeFiles/install/local.dir
+C:/Users/manut/Documentos/UNIVERSIDAD/2025/Sistemas_Embebidos/proyecto-final-tauro-aguirre/build/esp-idf/ft8_lib/CMakeFiles/install/strip.dir
 C:/Users/manut/Documentos/UNIVERSIDAD/2025/Sistemas_Embebidos/proyecto-final-tauro-aguirre/build/esp-idf/main/CMakeFiles/__idf_main.dir
 C:/Users/manut/Documentos/UNIVERSIDAD/2025/Sistemas_Embebidos/proyecto-final-tauro-aguirre/build/esp-idf/main/CMakeFiles/edit_cache.dir
 C:/Users/manut/Documentos/UNIVERSIDAD/2025/Sistemas_Embebidos/proyecto-final-tauro-aguirre/build/esp-idf/main/CMakeFiles/rebuild_cache.dir
