@@ -1,7 +1,7 @@
 {
     "version":            "1.2",
     "project_name":       "proyecto-final-tauro-aguirre",
-    "project_version":    "dab48ff-dirty",
+    "project_version":    "b88d124-dirty",
     "project_path":       "C:/Users/manut/Documentos/UNIVERSIDAD/2025/Sistemas_Embebidos/proyecto-final-tauro-aguirre",
     "idf_path":           "C:/Users/manut/ESP-IDF/v5.5.1/esp-idf",
     "build_dir":          "C:/Users/manut/Documentos/UNIVERSIDAD/2025/Sistemas_Embebidos/proyecto-final-tauro-aguirre/build",
@@ -730,7 +730,7 @@
             "managed_reqs": [],
             "managed_priv_reqs": [],
             "file": "C:/Users/manut/Documentos/UNIVERSIDAD/2025/Sistemas_Embebidos/proyecto-final-tauro-aguirre/build/esp-idf/main/libmain.a",
-            "sources": [ "C:/Users/manut/Documentos/UNIVERSIDAD/2025/Sistemas_Embebidos/proyecto-final-tauro-aguirre/main/MAP-FT8_main.c", "C:/Users/manut/Documentos/UNIVERSIDAD/2025/Sistemas_Embebidos/proyecto-final-tauro-aguirre/main/audio_driver.c" ],
+            "sources": [ "C:/Users/manut/Documentos/UNIVERSIDAD/2025/Sistemas_Embebidos/proyecto-final-tauro-aguirre/main/MAP-FT8_main.c", "C:/Users/manut/Documentos/UNIVERSIDAD/2025/Sistemas_Embebidos/proyecto-final-tauro-aguirre/main/audio_driver.c", "C:/Users/manut/Documentos/UNIVERSIDAD/2025/Sistemas_Embebidos/proyecto-final-tauro-aguirre/build/191111_110130.wav.S" ],
             "include_dirs": []
         },
         "mbedtls": {
