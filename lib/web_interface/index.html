@@ -31,6 +31,10 @@
             align-items: center;
             justify-content: center;
         }
+        #sleep-btn {
+            background: #007bff; /* Blue */
+            color: white;
+        }
     </style>
 </head>
 <body>
@@ -54,12 +58,14 @@
                 <button onclick='toggleLed()'>💡 Toggle LED</button>
                 <button onclick='getCallsign()'>📡 Consultar Señal</button>
                 <button onclick='getGrid()'>🗺️ Consultar Grid</button>
+                <button id="sleep-btn" onclick='toggleSleep()'>💤 Modo Ahorro</button>
             </div>
         </div>
     </div>
 
     <script>
         var socket = new WebSocket('ws://' + location.hostname + '/ws');
+        var isSleepMode = false;
         
         socket.onopen = function() { 
             document.getElementById('log').innerHTML = '<p>✅ Conectado al ESP32</p>'; 
@@ -75,10 +81,14 @@
             }
         };
         
-        socket.onmessage = function(event) { 
+        function logToUI(msg) {
             var log = document.getElementById('log');
-            log.innerHTML += '<p>' + event.data + '</p>';
+            log.innerHTML += '<p>' + msg + '</p>';
             log.scrollTop = log.scrollHeight;
+        }
+
+        socket.onmessage = function(event) { 
+            logToUI(event.data);
         };
 
         function login() {
@@ -112,6 +122,21 @@
             socket.send('TOGGLE_LED');
         }
 
+        function toggleSleep() {
+            socket.send('TOGGLE_SLEEP');
+            isSleepMode = !isSleepMode;
+            var btn = document.getElementById('sleep-btn');
+            if (isSleepMode) {
+                btn.innerText = "⚡ Despertar";
+                btn.style.background = "#ffc107"; // Amarillo/Naranja
+                btn.style.color = "#000";
+            } else {
+                btn.innerText = "💤 Modo Ahorro";
+                btn.style.background = "#007bff"; // Azul original
+                btn.style.color = "#fff";
+            }
+        }
+
         function getCallsign() {
             socket.send('GET_CALLSIGN');
         }
@@ -121,8 +146,23 @@
         }
 
         function syncTime() {
-            var now = Math.floor(Date.now() / 1000);
-            socket.send('SYNC_TIME:' + now);
+            // Intentamos obtener hora de internet con un timeout corto (1s)
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 1000);
+
+            fetch('https://worldtimeapi.org/api/ip', { signal: controller.signal })
+                .then(response => response.json())
+                .then(data => {
+                    var now = data.unixtime;
+                    socket.send('SYNC_TIME:' + now);
+                    logToUI("🌐 Sincronizado vía Internet (API)");
+                })
+                .catch(error => {
+                    // Fallback inmediato a la hora del dispositivo (que asumimos correcta por 4G/LTE)
+                    var now = Math.floor(Date.now() / 1000);
+                    socket.send('SYNC_TIME:' + now);
+                    logToUI("📱 Sincronizado (Hora del Dispositivo Cliente)");
+                });
         }
 
         function updateClock() {

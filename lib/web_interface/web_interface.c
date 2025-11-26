@@ -157,6 +157,21 @@ static esp_err_t echo_handler(httpd_req_t *req)
             const char* msg = led_state ? "LED ENCENDIDO" : "LED APAGADO";
             web_interface_send_log(msg);
             
+        } else if (strcmp(payload, "TOGGLE_SLEEP") == 0) {
+            static int sleep_mode = 0;
+            sleep_mode = !sleep_mode;
+            
+            if (sleep_mode) {
+                // Activar Modo Ahorro (Light Sleep / Modem Sleep)
+                esp_wifi_set_ps(WIFI_PS_MAX_MODEM);
+                gpio_set_level(LED_GPIO, 0); // Apagar LED para ahorrar
+                web_interface_send_log("💤 Modo Ahorro ACTIVADO (WiFi Low Power)");
+            } else {
+                // Despertar / Modo Rendimiento
+                esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
+                web_interface_send_log("⚡ Modo Rendimiento ACTIVADO");
+            }
+
         } else if (strncmp(payload, "LOGIN:", 6) == 0) {
             // Formato: LOGIN:CALLSIGN:GRID
             char *call = strtok(payload + 6, ":");
@@ -184,9 +199,9 @@ static esp_err_t echo_handler(httpd_req_t *req)
                 time(&now);
                 gmtime_r(&now, &timeinfo);
                 
-                char time_str[64];
-                strftime(time_str, sizeof(time_str), "Tiempo sincronizado: %H:%M:%S", &timeinfo);
-                web_interface_send_log(time_str);
+                // char time_str[64];
+                // strftime(time_str, sizeof(time_str), "Tiempo sincronizado: %H:%M:%S", &timeinfo);
+                // web_interface_send_log(time_str);
             }
 
         } else if (strcmp(payload, "GET_CALLSIGN") == 0) {
