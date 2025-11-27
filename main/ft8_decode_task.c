@@ -1,3 +1,10 @@
+/**
+ * @file ft8_decode_task.c
+ * @brief Implementación de la tarea de decodificación FT8 usando monitor_t.
+ * 
+ * Utiliza el módulo 'monitor' de ft8_lib para el procesamiento DSP (FFT, Waterfall).
+ */
+
 #include "ft8_decode_task.h"
 
 #include <stdio.h>
@@ -8,16 +15,15 @@
 #include "esp_log.h"
 #include "esp_system.h"
 #include "audio_driver.h"
-#include "kiss_fftr.h"
+#include "common/monitor.h"
 #include "ft8/decode.h"
 #include "ft8/constants.h"
+#include "ft8/message.h"
+
+static const char *TAG = "FT8_DECODE";
 
 /* --- Configuración DSP FT8 --- */
 #define FT8_SAMPLE_RATE     12000
-#define FFT_SIZE            1920 
-// Limitamos a 3000 Hz para ahorrar RAM (FT8 usa ~50-3000 Hz)
-#define MAX_FREQ            3000
-#define NUM_BINS            (MAX_FREQ * FFT_SIZE / FT8_SAMPLE_RATE) 
 
 /* --- Configuración de Modo Prueba (WAV Embebido) --- 
  * Descomentar para probar con archivos WAV embebidos en el binario */
@@ -49,161 +55,201 @@ static const test_file_t test_files[] = {
 static const int num_test_files = sizeof(test_files) / sizeof(test_files[0]);
 #endif
 
-/* --- Variables Globales de Procesamiento (FFT) --- */
-static kiss_fftr_cfg fft_cfg;
-static float window[FFT_SIZE];
-
 void ft8_decode_task(void *pvParameters)
 {
-    ESP_LOGI("FT8_DECODE", "Tarea de Decodificación FT8 iniciada");
+    ESP_LOGI(TAG, "Tarea de Decodificación FT8 iniciada (Monitor Mode)");
 
-    /* Inicialización de recursos para DSP */
-    fft_cfg = kiss_fftr_alloc(FFT_SIZE, 0, NULL, NULL);
-    if (fft_cfg == NULL) {
-        ESP_LOGE("FT8_DECODE", "Fallo alloc FFT");
-        vTaskDelete(NULL);
-    }
-
-    /* Pre-cálculo de Ventana Hanning para suavizado de FFT */
-    for (int i = 0; i < FFT_SIZE; i++) {
-        window[i] = 0.5f * (1.0f - cosf(2.0f * M_PI * i / (FFT_SIZE - 1)));
-    }
-
-    /* Configuración del Waterfall (Espectrograma) */
-    // Time OSR = 2 para mejor sincronización (Solapamiento 50%)
-    const int time_osr = 2;
-    const int num_blocks = 87 * time_osr; 
-    
-    waterfall_t power = {
-        .num_blocks = num_blocks,
-        .num_bins = NUM_BINS,
-        .time_osr = time_osr,
-        .freq_osr = 1,
-        .mag = NULL
+    /* Configuración del Monitor */
+    monitor_t mon;
+    monitor_config_t mon_cfg = {
+        .f_min = 200,
+        .f_max = 3000,
+        .sample_rate = FT8_SAMPLE_RATE,
+        .time_osr = 2, // kTime_osr en demo
+        .freq_osr = 1, // Reducido a 1 para ahorrar RAM (Waterfall ~80KB vs ~160KB)
+        .protocol = FTX_PROTOCOL_FT8
     };
-    
-    // Asignación dinámica de memoria para el waterfall
-    power.mag = malloc(num_blocks * NUM_BINS * sizeof(uint8_t));
-    power.protocol = PROTO_FT8; 
 
-    /* Buffers de Audio y FFT */
-    int16_t *audio_buf = malloc(FFT_SIZE * sizeof(int16_t)); // Buffer completo para FFT
-    kiss_fft_scalar *fft_in = malloc(FFT_SIZE * sizeof(kiss_fft_scalar));
-    kiss_fft_cpx *fft_out = malloc((FFT_SIZE / 2 + 1) * sizeof(kiss_fft_cpx)); // Salida completa FFT
+    monitor_init(&mon, &mon_cfg);
+    ESP_LOGI(TAG, "Monitor inicializado. Block size: %d", mon.block_size);
 
-    if (!power.mag || !audio_buf || !fft_in || !fft_out) {
-        ESP_LOGE("FT8_DECODE", "Fallo alloc buffers (Heap insuficiente?)");
+    // Buffer temporal para conversión int16 -> float
+    // monitor_process consume un bloque de mon.block_size muestras
+    float *float_buf = heap_caps_malloc(mon.block_size * sizeof(float), MALLOC_CAP_8BIT);
+    int16_t *pcm_buf = heap_caps_malloc(mon.block_size * sizeof(int16_t), MALLOC_CAP_8BIT);
+
+    if (!float_buf || !pcm_buf) {
+        ESP_LOGE(TAG, "Fallo alloc buffers");
         vTaskDelete(NULL);
+        return;
     }
-
-    // Inicializar buffer de audio con ceros
-    memset(audio_buf, 0, FFT_SIZE * sizeof(int16_t));
 
     size_t __attribute__((unused)) bytes_read = 0;
     int current_file_idx = 0;
-    
-    // Paso de avance: FFT_SIZE / time_osr
-    const int step_size = FFT_SIZE / time_osr; 
 
-#ifdef TEST_MODE_WAV
-    /* Configuración inicial para lectura de primer archivo WAV */
-    const uint8_t *wav_start = test_files[current_file_idx].start;
-    const uint8_t *wav_end = test_files[current_file_idx].end;
-    size_t wav_pos = 44; // Saltar header WAV (44 bytes)
-    size_t wav_size = wav_end - wav_start;
-    
-    uint32_t wav_sample_rate = *((uint32_t*)(wav_start + 24));
-    printf("\n--- Procesando: %s (SR: %lu Hz) ---\n", test_files[current_file_idx].name, wav_sample_rate);
-#endif
+    /* Variables para lectura de WAV */
+    const uint8_t *wav_start = NULL;
+    const uint8_t *wav_end = NULL;
+    size_t wav_size = 0;
+    size_t wav_pos = 0;
 
+    /* --- Máquina de Estados FT8 --- */
+    typedef enum {
+        FT8_STATE_IDLE,
+        FT8_STATE_RX,
+        FT8_STATE_DECODE,
+        FT8_STATE_REPORT
+    } ft8_state_t;
+
+    ft8_state_t current_state = FT8_STATE_IDLE;
+    
     while (1) {
-        /* Limpiar waterfall para nuevo ciclo */
-        memset(power.mag, 0, num_blocks * NUM_BINS);
-
-        /* --- FASE 1: Captura y Procesamiento FFT (Sliding Window) --- */
-        for (int i = 0; i < num_blocks; i++) {
-            
-            // 1. Desplazar datos antiguos (Shift)
-            // Movemos la segunda mitad del buffer al principio
-            memmove(audio_buf, audio_buf + step_size, (FFT_SIZE - step_size) * sizeof(int16_t));
-            
-            // 2. Leer nuevos datos para llenar el final del buffer
-            int16_t *new_data_ptr = audio_buf + (FFT_SIZE - step_size);
-            
+        switch (current_state) {
+            case FT8_STATE_IDLE:
 #ifdef TEST_MODE_WAV
-            size_t bytes_to_read = step_size * sizeof(int16_t);
-            
-            if (wav_pos + bytes_to_read > wav_size) {
-                memset(new_data_ptr, 0, bytes_to_read); 
-            } else {
-                memcpy(new_data_ptr, wav_start + wav_pos, bytes_to_read);
-                wav_pos += bytes_to_read;
-            }
-            vTaskDelay(pdMS_TO_TICKS(1)); 
+                if (current_file_idx < num_test_files) {
+                    wav_start = test_files[current_file_idx].start;
+                    wav_end = test_files[current_file_idx].end;
+                    wav_pos = 44; // Skip header
+                    wav_size = wav_end - wav_start;
+                    
+                    ESP_LOGI(TAG, "--- Procesando: %s ---", test_files[current_file_idx].name);
+                    
+                    monitor_reset(&mon);
+                    current_state = FT8_STATE_RX;
+                } else {
+                    ESP_LOGI(TAG, "TEST FINALIZADO. Reiniciando en 30s...");
+                    vTaskDelay(pdMS_TO_TICKS(30000));
+                    current_file_idx = 0;
+                }
 #else
-            if (audio_read(new_data_ptr, step_size, &bytes_read) != ESP_OK) {
-                // Si falla lectura, rellenar con 0
-                memset(new_data_ptr, 0, step_size * sizeof(int16_t));
-            }
+                vTaskDelay(pdMS_TO_TICKS(100));
+                monitor_reset(&mon);
+                current_state = FT8_STATE_RX;
+#endif
+                break;
+
+            case FT8_STATE_RX:
+                // Procesar audio hasta llenar el waterfall
+                if (mon.wf.num_blocks >= mon.wf.max_blocks) {
+                    current_state = FT8_STATE_DECODE;
+                    break;
+                }
+
+                // Leer un bloque de audio
+                size_t bytes_to_read = mon.block_size * sizeof(int16_t);
+                
+#ifdef TEST_MODE_WAV
+                if (wav_pos + bytes_to_read > wav_size) {
+                    memset(pcm_buf, 0, bytes_to_read);
+                    // Si se acaba el archivo antes de llenar el waterfall, pasamos a decodificar igual
+                    // o rellenamos con silencio. Aquí rellenamos con silencio.
+                } else {
+                    memcpy(pcm_buf, wav_start + wav_pos, bytes_to_read);
+                    wav_pos += bytes_to_read;
+                }
+                // Yield para evitar WDT en bucles largos
+                if (mon.wf.num_blocks % 5 == 0) vTaskDelay(pdMS_TO_TICKS(1));
+#else
+                if (audio_read(pcm_buf, mon.block_size, &bytes_read) != ESP_OK) {
+                    memset(pcm_buf, 0, bytes_to_read);
+                }
 #endif
 
-            // 3. Procesar FFT sobre el buffer completo (1920 muestras)
-            for (int j = 0; j < FFT_SIZE; j++) {
-                fft_in[j] = ((float)audio_buf[j]) * window[j];
-            }
-            kiss_fftr(fft_cfg, fft_in, fft_out);
-
-            // 4. Guardar Magnitud en Waterfall (Solo bins de interés)
-            for (int j = 0; j < NUM_BINS; j++) {
-                float mag = sqrtf(fft_out[j].r * fft_out[j].r + fft_out[j].i * fft_out[j].i);
-                float db = 20.0f * log10f(mag + 1e-9f); 
-                int val = (int)(db * 2.0f); 
-                if (val < 0) val = 0;
-                if (val > 255) val = 255;
-                power.mag[i * NUM_BINS + j] = (uint8_t)val;
-            }
-        }
-
-        /* --- FASE 2: Decodificación FT8 --- */
-        const int max_candidates = 10;
-        candidate_t heap[10];
-        int num_candidates = ft8_find_sync(&power, max_candidates, heap, 0);
-
-        printf("INFORMACION DECODIFICADA (Candidatos: %d)\n", num_candidates);
-
-        for (int i = 0; i < num_candidates; i++) {
-            vTaskDelay(pdMS_TO_TICKS(10)); 
-
-            message_t msg;
-            decode_status_t status;
-            
-            if (ft8_decode(&power, &heap[i], &msg, 20, &status)) {
-                printf("MENSAJE: %s | SNR: %d | DT: %.2f\n", 
-                         msg.text, heap[i].score, (float)heap[i].time_offset * FT8_SYMBOL_PERIOD);
-            } else {
-                printf("FALLO: SNR=%d | LDPC=%d CRC=0x%04x/0x%04x\n",
-                        heap[i].score, status.ldpc_errors, status.crc_extracted, status.crc_calculated);
-            }
-        }
-        printf("\n");
-
+                // Convertir a float y procesar
+                for (int i = 0; i < mon.block_size; i++) {
 #ifdef TEST_MODE_WAV
-        /* Lógica de cambio de archivo para Test */
-        current_file_idx++;
-        if (current_file_idx < num_test_files) {
-            wav_start = test_files[current_file_idx].start;
-            wav_end = test_files[current_file_idx].end;
-            wav_pos = 44;
-            wav_size = wav_end - wav_start;
-            
-            uint32_t next_sr = *((uint32_t*)(wav_start + 24));
-            printf("--- Procesando: %s (SR: %lu Hz) ---\n", test_files[current_file_idx].name, next_sr);
-        } else {
-            printf("TEST FINALIZADO\n");
-            vTaskSuspend(NULL);
-        }
+                    // Normalizar a rango [-1.0, 1.0] para ft8_lib
+                    float_buf[i] = (float)pcm_buf[i] / 32768.0f;
 #else
-        vTaskDelay(pdMS_TO_TICKS(1000)); 
+                    // Centrar y normalizar ADC (0-4095 -> -1.0 a 1.0)
+                    float_buf[i] = ((float)pcm_buf[i] - 2048.0f) / 2048.0f;
 #endif
+                }
+                
+                // Yield para evitar WDT antes de proceso pesado
+                vTaskDelay(pdMS_TO_TICKS(1));
+                monitor_process(&mon, float_buf);
+                break;
+
+            case FT8_STATE_DECODE:
+                ESP_LOGI(TAG, "Iniciando decodificación... (Blocks: %d)", mon.wf.num_blocks);
+                
+                const int max_candidates = 20;
+                ftx_candidate_t heap[20];
+                int num_candidates = ftx_find_candidates(&mon.wf, max_candidates, heap, 10); // min_score = 10
+                ESP_LOGI(TAG, "Candidatos encontrados: %d", num_candidates);
+
+                // Deduplicación simple
+                uint32_t decoded_hashes[20];
+                int decoded_count = 0;
+
+                for (int i = 0; i < num_candidates; i++) {
+                    const ftx_candidate_t *cand = &heap[i];
+                    ftx_message_t msg;
+                    ftx_decode_status_t status;
+                    
+                    // Intentar decodificar
+                    if (ftx_decode_candidate(&mon.wf, cand, 50, &msg, &status)) {
+                        // Éxito en decodificación
+                        char text[40]; // Buffer para el texto del mensaje
+                        
+                        // Desempaquetar mensaje a texto
+                        ftx_message_offsets_t offsets;
+                        
+                        ftx_message_decode(&msg, NULL, text, &offsets);
+
+                        // Calcular hash simple para deduplicación
+                        uint32_t hash = 0;
+                        for (char *p = text; *p; p++) hash = hash * 31 + *p;
+
+                        // Verificar duplicados
+                        bool is_duplicate = false;
+                        for (int k = 0; k < decoded_count; k++) {
+                            if (decoded_hashes[k] == hash) {
+                                is_duplicate = true;
+                                break;
+                            }
+                        }
+
+                        if (!is_duplicate) {
+                            if (decoded_count < 20) decoded_hashes[decoded_count++] = hash;
+                            ESP_LOGI(TAG, "DECODIFICADO: %s | Score: %d | DT: %.2f", 
+                                     text, cand->score, (float)cand->time_offset * mon.symbol_period);
+                        }
+                    } else {
+                        // Fallo en decodificación (CRC o LDPC)
+                        // Solo loguear si el score es alto para evitar ruido
+                        if (cand->score > 15) {
+                            char text[40] = "???";
+                            // Intentar decodificar "best effort" para ver qué era
+                            ftx_message_offsets_t offsets;
+                            ftx_message_decode(&msg, NULL, text, &offsets);
+
+                            ESP_LOGW(TAG, "[FALLO] %s | Score: %d | DT: %.2f | LDPC: %d | CRC: 0x%04X", 
+                                     text, cand->score, (float)cand->time_offset * mon.symbol_period, 
+                                     status.ldpc_errors, status.crc_extracted);
+                        }
+                    }
+                    // Yield para evitar WDT
+                    vTaskDelay(pdMS_TO_TICKS(10));
+                }
+                
+                current_state = FT8_STATE_REPORT;
+                break;
+
+            case FT8_STATE_REPORT:
+#ifdef TEST_MODE_WAV
+                current_file_idx++;
+#else
+                vTaskDelay(pdMS_TO_TICKS(1000)); 
+#endif
+                current_state = FT8_STATE_IDLE;
+                break;
+        }
     }
+    
+    monitor_free(&mon);
+    free(float_buf);
+    free(pcm_buf);
 }

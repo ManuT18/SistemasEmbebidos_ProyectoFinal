@@ -1,3 +1,11 @@
+/**
+ * @file audio_driver.c
+ * @brief Implementación del Driver de Audio usando I2S.
+ * 
+ * Utiliza el periférico I2S del ESP32 en modo ADC/DAC built-in.
+ * Nota: El ADC built-in tiene limitaciones de linealidad y ruido, pero es suficiente para pruebas básicas.
+ */
+
 #include "audio_driver.h"
 #include "esp_log.h"
 #include "esp_check.h"
@@ -23,6 +31,16 @@ static dac_continuous_handle_t dac_handle = NULL;
 
 // --- Implementación ---
 
+/**
+ * @brief Inicializa el driver I2S.
+ * 
+ * Configura:
+ * - Modo: Master, RX/TX, ADC/DAC Built-in.
+ * - Frecuencia de muestreo: 12000 Hz.
+ * - Formato: 16-bit PCM.
+ * 
+ * @return ESP_OK si todo fue correcto.
+ */
 esp_err_t audio_driver_init(void)
 {
     ESP_LOGI(TAG, "Inicializando Audio Driver (ADC/DAC Internos)...");

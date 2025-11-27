@@ -1,3 +1,11 @@
+/**
+ * @file audio_driver.h
+ * @brief Driver de Audio para ESP32 (ADC/DAC).
+ * 
+ * Proporciona una interfaz abstracta para inicializar y utilizar el hardware de audio.
+ * Soporta lectura desde ADC (I2S/ADC built-in) y escritura a DAC (I2S/DAC built-in).
+ */
+
 #ifndef AUDIO_DRIVER_H
 #define AUDIO_DRIVER_H
 
@@ -12,29 +20,31 @@
 #define AUDIO_BUFFER_SIZE 1024 // Cantidad de muestras por buffer
 
 /**
- * @brief Inicializa el sistema de audio (ADC para RX, DAC para TX)
+ * @brief Inicializa el sistema de audio (ADC para RX, DAC para TX).
  * 
- * @return esp_err_t ESP_OK si tuvo éxito
+ * Configura el I2S en modo ADC/DAC built-in.
+ * 
+ * @return esp_err_t ESP_OK si tuvo éxito.
  */
 esp_err_t audio_driver_init(void);
 
 /**
- * @brief Lee muestras de audio del ADC (Bloqueante)
+ * @brief Lee muestras de audio del ADC (Bloqueante).
  * 
- * @param buffer Puntero al buffer donde guardar las muestras
- * @param length Cantidad de muestras a leer
- * @param bytes_read Puntero para guardar la cantidad de bytes leídos
- * @return esp_err_t ESP_OK si tuvo éxito
+ * @param[out] buffer Puntero al buffer donde guardar las muestras.
+ * @param[in] length Cantidad de muestras a leer.
+ * @param[out] bytes_read Puntero para guardar la cantidad de bytes leídos.
+ * @return esp_err_t ESP_OK si tuvo éxito.
  */
 esp_err_t audio_read(int16_t *buffer, size_t length, size_t *bytes_read);
 
 /**
- * @brief Escribe muestras de audio al DAC (Bloqueante)
+ * @brief Escribe muestras de audio al DAC (Bloqueante).
  * 
- * @param buffer Puntero al buffer con las muestras a escribir
- * @param length Cantidad de muestras a escribir
- * @param bytes_written Puntero para guardar la cantidad de bytes escritos
- * @return esp_err_t ESP_OK si tuvo éxito
+ * @param[in] buffer Puntero al buffer con las muestras a escribir.
+ * @param[in] length Cantidad de muestras a escribir.
+ * @param[out] bytes_written Puntero para guardar la cantidad de bytes escritos.
+ * @return esp_err_t ESP_OK si tuvo éxito.
  */
 esp_err_t audio_write(const int16_t *buffer, size_t length, size_t *bytes_written);
 
