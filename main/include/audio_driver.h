@@ -48,4 +48,16 @@ esp_err_t audio_read(int16_t *buffer, size_t length, size_t *bytes_read);
  */
 esp_err_t audio_write(const int16_t *buffer, size_t length, size_t *bytes_written);
 
+/**
+ * @brief Prepara el driver para transmisión (Detiene ADC, Inicia DAC).
+ * @return esp_err_t ESP_OK si tuvo éxito.
+ */
+esp_err_t audio_tx_start(void);
+
+/**
+ * @brief Finaliza la transmisión (Detiene DAC, Reinicia ADC).
+ * @return esp_err_t ESP_OK si tuvo éxito.
+ */
+esp_err_t audio_tx_stop(void);
+
 #endif // AUDIO_DRIVER_H

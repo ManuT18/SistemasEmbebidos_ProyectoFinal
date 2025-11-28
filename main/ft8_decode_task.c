@@ -19,6 +19,9 @@
 #include "ft8/decode.h"
 #include "ft8/constants.h"
 #include "ft8/message.h"
+#include <sys/time.h>
+#include <time.h>
+#include "web_interface.h"
 
 static const char *TAG = "FT8_DECODE";
 
@@ -31,14 +34,16 @@ static const char *TAG = "FT8_DECODE";
 
 #ifdef TEST_MODE_WAV
 /* Definición de archivos WAV embebidos en el binario */
-extern const uint8_t _binary_191111_110130_wav_start[];
-extern const uint8_t _binary_191111_110130_wav_end[];
-extern const uint8_t _binary_191111_110145_wav_start[];
-extern const uint8_t _binary_191111_110145_wav_end[];
-extern const uint8_t _binary_191111_110200_wav_start[];
-extern const uint8_t _binary_191111_110200_wav_end[];
-extern const uint8_t _binary_191111_110215_wav_start[];
-extern const uint8_t _binary_191111_110215_wav_end[];
+extern const uint8_t _binary_websdr_test1_wav_start[];
+extern const uint8_t _binary_websdr_test1_wav_end[];
+extern const uint8_t _binary_websdr_test2_wav_start[];
+extern const uint8_t _binary_websdr_test2_wav_end[];
+extern const uint8_t _binary_websdr_test3_wav_start[];
+extern const uint8_t _binary_websdr_test3_wav_end[];
+extern const uint8_t _binary_websdr_test4_wav_start[];
+extern const uint8_t _binary_websdr_test4_wav_end[];
+extern const uint8_t _binary_websdr_test5_wav_start[];
+extern const uint8_t _binary_websdr_test5_wav_end[];
 
 typedef struct {
     const char* name;
@@ -47,13 +52,22 @@ typedef struct {
 } test_file_t;
 
 static const test_file_t test_files[] = {
-    { "191111_110130.wav", _binary_191111_110130_wav_start, _binary_191111_110130_wav_end },
-    { "191111_110145.wav", _binary_191111_110145_wav_start, _binary_191111_110145_wav_end },
-    { "191111_110200.wav", _binary_191111_110200_wav_start, _binary_191111_110200_wav_end },
-    { "191111_110215.wav", _binary_191111_110215_wav_start, _binary_191111_110215_wav_end }
+    { "websdr_test1.wav", _binary_websdr_test1_wav_start, _binary_websdr_test1_wav_end },
+    { "websdr_test2.wav", _binary_websdr_test2_wav_start, _binary_websdr_test2_wav_end },
+    { "websdr_test3.wav", _binary_websdr_test3_wav_start, _binary_websdr_test3_wav_end },
+    { "websdr_test4.wav", _binary_websdr_test4_wav_start, _binary_websdr_test4_wav_end },
+    { "websdr_test5.wav", _binary_websdr_test5_wav_start, _binary_websdr_test5_wav_end },
 };
 static const int num_test_files = sizeof(test_files) / sizeof(test_files[0]);
 #endif
+
+// Bandera global para controlar el inicio del test
+static volatile bool g_run_test_flag = false;
+
+void ft8_start_test(void) {
+    g_run_test_flag = true;
+    ESP_LOGI(TAG, "Solicitud de TEST recibida.");
+}
 
 void ft8_decode_task(void *pvParameters)
 {
@@ -107,20 +121,56 @@ void ft8_decode_task(void *pvParameters)
         switch (current_state) {
             case FT8_STATE_IDLE:
 #ifdef TEST_MODE_WAV
-                if (current_file_idx < num_test_files) {
-                    wav_start = test_files[current_file_idx].start;
-                    wav_end = test_files[current_file_idx].end;
-                    wav_pos = 44; // Skip header
-                    wav_size = wav_end - wav_start;
-                    
-                    ESP_LOGI(TAG, "--- Procesando: %s ---", test_files[current_file_idx].name);
-                    
-                    monitor_reset(&mon);
-                    current_state = FT8_STATE_RX;
+                // Esperar a que se active la bandera de test
+                if (g_run_test_flag) {
+                    if (current_file_idx < num_test_files) {
+                        // Sincronizar con el reloj (00, 15, 30, 45)
+                        struct timeval tv;
+                        gettimeofday(&tv, NULL);
+                        struct tm *timeinfo = localtime(&tv.tv_sec);
+                        int sec = timeinfo->tm_sec;
+                        int next_slot = ((sec / 15) + 1) * 15;
+                        int wait_sec = next_slot - sec;
+                        if (wait_sec == 0) wait_sec = 15; // Si justo estamos en el segundo, esperar al siguiente ciclo
+
+                        ESP_LOGI(TAG, "Esperando %d segundos para sincronizar inicio (T=%02d:%02d:%02d)...", 
+                                 wait_sec, timeinfo->tm_hour, timeinfo->tm_min, timeinfo->tm_sec);
+                        
+                        char msg_wait[64];
+                        snprintf(msg_wait, sizeof(msg_wait), "⏳ Esperando %ds para inicio...", wait_sec);
+                        web_interface_send_log(msg_wait);
+
+                        vTaskDelay(pdMS_TO_TICKS(wait_sec * 1000));
+
+                        // Loguear hora de inicio real
+                        gettimeofday(&tv, NULL);
+                        timeinfo = localtime(&tv.tv_sec);
+                        ESP_LOGI(TAG, "Inicio Ciclo: %02d:%02d:%02d", timeinfo->tm_hour, timeinfo->tm_min, timeinfo->tm_sec);
+
+                        // Iniciar procesamiento
+                        wav_start = test_files[current_file_idx].start;
+                        wav_end = test_files[current_file_idx].end;
+                        wav_pos = 44; // Skip header
+                        wav_size = wav_end - wav_start;
+                        
+                        ESP_LOGI(TAG, "--- Procesando: %s ---", test_files[current_file_idx].name);
+                        
+                        char msg[64];
+                        snprintf(msg, sizeof(msg), "▶️ Procesando: %s", test_files[current_file_idx].name);
+                        web_interface_send_log(msg);
+                        
+                        monitor_reset(&mon);
+                        current_state = FT8_STATE_RX;
+                    } else {
+                        // Fin del ciclo de test
+                        ESP_LOGI(TAG, "TEST FINALIZADO.");
+                        web_interface_send_log("✅ TEST FINALIZADO");
+                        g_run_test_flag = false;
+                        current_file_idx = 0;
+                        vTaskDelay(pdMS_TO_TICKS(100));
+                    }
                 } else {
-                    ESP_LOGI(TAG, "TEST FINALIZADO. Reiniciando en 30s...");
-                    vTaskDelay(pdMS_TO_TICKS(30000));
-                    current_file_idx = 0;
+                    vTaskDelay(pdMS_TO_TICKS(100));
                 }
 #else
                 vTaskDelay(pdMS_TO_TICKS(100));
@@ -132,6 +182,11 @@ void ft8_decode_task(void *pvParameters)
             case FT8_STATE_RX:
                 // Procesar audio hasta llenar el waterfall
                 if (mon.wf.num_blocks >= mon.wf.max_blocks) {
+                    // Enviar Waterfall a la Web
+                    size_t wf_size = mon.wf.num_blocks * mon.wf.block_stride;
+                    // ESP_LOGI(TAG, "Enviando Waterfall (%d bytes)...", wf_size);
+                    web_interface_send_binary(mon.wf.mag, wf_size);
+
                     current_state = FT8_STATE_DECODE;
                     break;
                 }
@@ -147,6 +202,15 @@ void ft8_decode_task(void *pvParameters)
                 } else {
                     memcpy(pcm_buf, wav_start + wav_pos, bytes_to_read);
                     wav_pos += bytes_to_read;
+
+                    // Simular tiempo real de audio
+                    // block_size muestras / 12000 Hz = segundos
+                    // REDUCIDO A LA MITAD para compensar overhead de procesamiento y asegurar
+                    // que el ciclo total (Audio + Decodificación) entre en los 15s del slot FT8.
+                    // Si nos pasamos de 15s, perdemos el siguiente slot.
+                    uint32_t delay_ms = ((mon.block_size * 1000) / FT8_SAMPLE_RATE) / 2;
+                    if (delay_ms < 2) delay_ms = 2; // Mínimo para dar aire al RTOS
+                    vTaskDelay(pdMS_TO_TICKS(delay_ms));
                 }
                 // Yield para evitar WDT en bucles largos
                 if (mon.wf.num_blocks % 5 == 0) vTaskDelay(pdMS_TO_TICKS(1));
@@ -216,6 +280,11 @@ void ft8_decode_task(void *pvParameters)
                             if (decoded_count < 20) decoded_hashes[decoded_count++] = hash;
                             ESP_LOGI(TAG, "DECODIFICADO: %s | Score: %d | DT: %.2f", 
                                      text, cand->score, (float)cand->time_offset * mon.symbol_period);
+                            
+                            // Enviar a Web Interface
+                            char web_msg[128];
+                            snprintf(web_msg, sizeof(web_msg), "📡 RX: %s (%.1f dB)", text, (float)cand->score);
+                            web_interface_send_log(web_msg);
                         }
                     } else {
                         // Fallo en decodificación (CRC o LDPC)
@@ -239,6 +308,13 @@ void ft8_decode_task(void *pvParameters)
                 break;
 
             case FT8_STATE_REPORT:
+                {
+                    struct timeval tv_end;
+                    gettimeofday(&tv_end, NULL);
+                    struct tm *timeinfo_end = localtime(&tv_end.tv_sec);
+                    ESP_LOGI(TAG, "Fin Ciclo: %02d:%02d:%02d", timeinfo_end->tm_hour, timeinfo_end->tm_min, timeinfo_end->tm_sec);
+                }
+
 #ifdef TEST_MODE_WAV
                 current_file_idx++;
 #else

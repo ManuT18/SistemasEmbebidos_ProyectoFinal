@@ -111,40 +111,65 @@ esp_err_t audio_write(const int16_t *buffer, size_t length, size_t *bytes_writte
 {
     if (!dac_handle) return ESP_ERR_INVALID_STATE;
     
-    // DAC Continuous espera uint8_t (8-bit DAC).
-    // Debemos convertir int16_t a uint8_t.
-    // FT8 genera audio con amplitud variable, asumimos entrada 16-bit signed.
-    // Convertir: (val + 32768) >> 8
-    
-    // Buffer temporal para conversión (en stack si es pequeño, o malloc)
-    // Para eficiencia, procesamos por chunks o asumimos que el caller ya envía 8-bit si cambiamos el header.
-    // Pero el header dice int16_t. Haremos conversión al vuelo.
-    
-    // NOTA: Para no complicar con mallocs aquí, escribiremos en bloques pequeños o 
-    // pediremos al caller que envíe formato compatible. 
-    // Por ahora, implementación simple: conversión in-place si el buffer fuera modificable, 
-    // pero es const. Usamos un buffer estático pequeño para chunks.
-    
+    size_t total_written = 0;
+    size_t samples_processed = 0;
     uint8_t tmp_buf[AUDIO_BUFFER_SIZE]; 
-    size_t chunk_size = (length > AUDIO_BUFFER_SIZE) ? AUDIO_BUFFER_SIZE : length;
     
-    for (size_t i = 0; i < chunk_size; i++) {
-        // Escalar 16-bit signed a 8-bit unsigned
-        int32_t val = buffer[i];
-        val = (val + 32768) >> 8; // Shift simple
-        if (val < 0) val = 0;
-        if (val > 255) val = 255;
-        tmp_buf[i] = (uint8_t)val;
+    while (samples_processed < length) {
+        // Calcular tamaño del chunk actual (en muestras)
+        size_t remaining = length - samples_processed;
+        size_t chunk_samples = (remaining > AUDIO_BUFFER_SIZE) ? AUDIO_BUFFER_SIZE : remaining;
+        
+        // Convertir int16 -> uint8
+        for (size_t i = 0; i < chunk_samples; i++) {
+            int32_t val = buffer[samples_processed + i];
+            val = (val + 32768) >> 8; // Shift simple
+            if (val < 0) val = 0;
+            if (val > 255) val = 255;
+            tmp_buf[i] = (uint8_t)val;
+        }
+        
+        size_t written_bytes = 0;
+        // Escribir al DAC (bloqueante con timeout)
+        esp_err_t ret = dac_continuous_write(dac_handle, tmp_buf, chunk_samples, &written_bytes, 1000);
+        
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "Error escribiendo al DAC: %d", ret);
+            return ret;
+        }
+        
+        samples_processed += chunk_samples;
+        total_written += written_bytes;
     }
     
-    size_t written = 0;
-    esp_err_t ret = dac_continuous_write(dac_handle, tmp_buf, chunk_size, &written, 100);
-    
-    // Ajustamos bytes_written para reflejar la entrada (int16) consumida
-    // Si escribimos N bytes (muestras de 8 bits), consumimos N muestras de 16 bits (2*N bytes).
-    if (ret == ESP_OK) {
-        *bytes_written = written * 2; 
+    // Reportamos bytes "consumidos" del input (que eran int16, o sea 2 bytes por muestra)
+    if (bytes_written) {
+        *bytes_written = samples_processed * sizeof(int16_t);
     }
     
-    return ret;
+    return ESP_OK;
+}
+
+esp_err_t audio_tx_start(void)
+{
+    ESP_LOGI(TAG, "Iniciando TX: Deteniendo ADC, Habilitando DAC...");
+    if (adc_handle) {
+        adc_continuous_stop(adc_handle);
+    }
+    if (dac_handle) {
+        dac_continuous_enable(dac_handle);
+    }
+    return ESP_OK;
+}
+
+esp_err_t audio_tx_stop(void)
+{
+    ESP_LOGI(TAG, "Deteniendo TX: Deshabilitando DAC, Iniciando ADC...");
+    if (dac_handle) {
+        dac_continuous_disable(dac_handle);
+    }
+    if (adc_handle) {
+        adc_continuous_start(adc_handle);
+    }
+    return ESP_OK;
 }

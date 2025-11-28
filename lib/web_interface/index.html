@@ -5,250 +5,560 @@
     <meta name='viewport' content='width=device-width, initial-scale=1'>
     <title>Modem FT8</title>
     <style>
-        body { background:#111; color:#0f0; font-family:monospace; text-align:center; }
-        #container { display: flex; justify-content: center; align-items: flex-start; gap: 20px; padding: 20px; }
-        #log { border:1px solid #333; height:300px; width: 60%; overflow:auto; padding:10px; text-align:left; background:#000; }
-        #controls { display: flex; flex-direction: column; gap: 10px; }
-        button { padding: 10px 20px; background: #0f0; color: #000; border: none; cursor: pointer; font-weight: bold; }
-        button:hover { background: #0a0; }
-        
-        /* Login Screen Styles */
-        #login-screen { display: flex; flex-direction: column; align-items: center; gap: 15px; margin-top: 50px; }
-        input { padding: 10px; background: #222; color: #0f0; border: 1px solid #0f0; text-transform: uppercase; }
-        .hidden { display: none !important; }
-        #logout-btn {
-            position: absolute;
-            top: 10px;
-            right: 10px;
-            width: 30px;
-            height: 30px;
-            background: red;
-            color: white;
-            border: none;
-            font-weight: bold;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
+        body { 
+            background: #050505; 
+            color: #0f0; 
+            font-family: 'Courier New', monospace; 
+            margin: 0; 
+            display: flex; 
+            flex-direction: column; 
+            min-height: 100vh; 
+            position: relative; 
         }
-        #sleep-btn {
-            background: #007bff; /* Blue */
-            color: white;
-        }
-        
-        /* Toggle Switch Styles */
-        .switch-container {
+
+        /* Top Controls */
+        #top-left-controls {
             position: absolute;
-            top: 10px;
-            left: 10px;
+            top: 15px;
+            left: 15px;
             display: flex;
             align-items: center;
             gap: 10px;
-            color: #fff;
+            z-index: 100;
+        }
+
+        #logout-btn {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            background: #d00;
+            color: white;
+            border: none;
+            width: 30px;
+            height: 30px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+        }
+
+        /* Titles */
+        h1 {
+            text-align: center;
+            margin: 45px 0 5px 0; /* Aumentado margen superior para evitar solapamiento */
+            font-size: 1.8em;
+        }
+
+        #clock-display {
+            text-align: center;
+            font-size: 0.96em;
+            margin: 0 0 15px 0;
+            color: #0f0;
             font-weight: bold;
         }
+
+        /* Toggle Switch Compact */
         .switch {
             position: relative;
             display: inline-block;
-            width: 60px;
-            height: 34px;
+            width: 30px;
+            height: 15px;
         }
-        .switch input { 
-            opacity: 0;
-            width: 0;
-            height: 0;
-        }
+        .switch input { opacity: 0; width: 0; height: 0; }
         .slider {
             position: absolute;
             cursor: pointer;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background-color: #ccc;
-            -webkit-transition: .4s;
-            transition: .4s;
-            border-radius: 34px;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-color: #2196F3; /* Default (Unchecked) = Sleep (Azul) */
+            transition: .2s;
+            border-radius: 20px;
         }
         .slider:before {
             position: absolute;
             content: "";
-            height: 26px;
-            width: 26px;
-            left: 4px;
-            bottom: 4px;
+            height: 11px;
+            width: 11px;
+            left: 2px;
+            bottom: 2px;
             background-color: white;
-            -webkit-transition: .4s;
             transition: .4s;
             border-radius: 50%;
         }
-        input:checked + .slider {
-            background-color: #2196F3;
+        
+        /* Checked = Performance (Amarillo, Derecha) */
+        input:checked + .slider { background-color: #f3cd21; }
+        input:checked + .slider:before { transform: translateX(15px); }
+
+        /* Main Layout */
+        #main-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 0 5% 10px 5%; /* Ajustado padding superior */
+            gap: 10px;
+            /* overflow: hidden; Eliminado para permitir scroll */
         }
-        input:focus + .slider {
-            box-shadow: 0 0 1px #2196F3;
+
+        /* Waterfall Section */
+        #waterfall-container {
+            flex: 2;
+            background: #000;
+            border: 1px solid #333;
+            position: relative;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
         }
-        input:checked + .slider:before {
-            -webkit-transform: translateX(26px);
-            -ms-transform: translateX(26px);
-            transform: translateX(26px);
+        
+        canvas {
+            width: 100%;
+            height: 100%;
+            image-rendering: pixelated; 
         }
-        /* Icons inside slider */
-        .slider-icon {
+
+        #waterfall-label {
             position: absolute;
-            top: 50%;
-            transform: translateY(-50%);
-            font-size: 16px;
+            top: 5px;
+            left: 5px;
+            background: rgba(0,0,0,0.7);
+            padding: 2px 5px;
+            font-size: 0.8em;
+            pointer-events: none;
         }
-        .icon-left { left: 8px; }
-        .icon-right { right: 8px; }
 
-        /* Resize Clock */
-        #clock-display { font-size: 1.2em; margin-top: 40px; }
+        /* Console Section */
+        #log-container {
+            height: 300px;
+            min-height: 300px;
+            background: #000;
+            border: 1px solid #333;
+            overflow-y: auto;
+            padding: 10px;
+            font-size: 0.9em;
+            text-align: left;
+        }
+        #log p { margin: 2px 0; border-bottom: 1px solid #111; }
 
+        /* Footer Buttons */
+        #footer-controls {
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+            padding: 5px;
+        }
+        
+        .action-btn {
+            flex: 1;
+            padding: 15px;
+            background: #fff;
+            color: #000;
+            border: none;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 1em;
+            border-radius: 4px;
+            transition: background 0.2s;
+        }
+        .action-btn:hover { background: #ccc; }
+
+        /* Login Screen */
+        #login-screen {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: #050505;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            gap: 20px;
+            z-index: 1000;
+        }
+        .login-input {
+            padding: 10px;
+            background: #222;
+            color: #0f0;
+            border: 1px solid #0f0;
+            text-transform: uppercase;
+            width: 200px;
+            text-align: center;
+        }
+        .hidden { display: none !important; }
+
+        /* Sleep Screen */
+        #sleep-screen {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: #000;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000; /* Por encima de todo */
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.5s ease, visibility 0.5s;
+        }
+        #sleep-screen.active {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        /* Big Switch */
+        .big-switch {
+            width: 80px;
+            height: 40px;
+        }
+        .big-switch .slider:before {
+            height: 32px;
+            width: 32px;
+            left: 4px;
+            bottom: 4px;
+        }
+        
+        /* Checked = Performance (Amarillo, Derecha) para Big Switch */
+        .big-switch input:checked + .slider { background-color: #f3cd21; }
+        /* Busy Modal */
+        #busy-modal {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.9);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 3000;
+        }
+
+        /* Spectator Mode */
+        .spectator-mode #main-container {
+            border: 2px solid #d00;
+        }
+        .spectator-mode .action-btn {
+            background: #333 !important;
+            color: #888 !important;
+            cursor: not-allowed;
+        }
     </style>
 </head>
 <body>
-    <h1>📡 Monitor FT8</h1>
-    
+
     <!-- Login Screen -->
     <div id="login-screen">
-        <h2>Identificación de Operador</h2>
-        <input type="text" id="callsign" placeholder="Señal Distintiva (ej. LU7AA)">
-        <input type="text" id="grid" placeholder="Grid Locator (ej. GF05)">
-        <button onclick="login()">INICIAR</button>
+        <h2>📡 Identificación</h2>
+        <input type="text" id="callsign" class="login-input" placeholder="CALLSIGN (ej. LU7AA)">
+        <input type="text" id="grid" class="login-input" placeholder="GRID (ej. GF05)">
+        <button class="action-btn" style="width: 220px; flex: none; background: #050505; color: #0f0; border: 1px solid #0f0;" onclick="login()">INGRESAR</button>
     </div>
 
-    <!-- Main Screen -->
-    <div id="main-screen" class="hidden">
-        <button id="logout-btn" onclick="logout()">X</button>
+    <!-- Sleep Screen Overlay -->
+    <div id="sleep-screen">
+        <div style="font-size: 3em; margin-bottom: 20px;">🌙</div>
+        <h1>MODO SLEEP ACTIVADO</h1>
+        <div id="sleep-clock" style="font-size: 2em; color: #0f0; margin: 20px 0; font-weight: bold;">--:--:--</div>
         
-        <!-- Toggle Switch for Power Mode -->
-        <div class="switch-container">
-            <span id="mode-icon">💤</span>
-            <label class="switch">
-                <input type="checkbox" id="sleep-toggle" onclick="toggleSleep()" checked>
-                <span class="slider round"></span>
+        <div style="margin: 30px 0; display: flex; align-items: center; gap: 15px;">
+            <span style="font-size: 1.5em;">💤</span>
+            <label class="switch big-switch">
+                <input type="checkbox" id="sleep-toggle-big" onclick="toggleSleep()" checked>
+                <span class="slider"></span>
             </label>
-            <span id="mode-icon-active">⚡</span>
+            <span style="font-size: 1.5em;">⚡</span>
         </div>
 
-        <h2 id='clock-display'>HORA ACTUAL (UTC): --:--:--</h2>
-        <div id='container'>
-            <div id='log'>Esperando conexión...</div>
-            <div id='controls'>
-                <button onclick='toggleLed()'>💡 Toggle LED</button>
-                <button onclick='getCallsign()'>📡 Consultar Señal</button>
-                <button onclick='getGrid()'>🗺️ Consultar Grid</button>
+        <p style="color: #888; max-width: 80%; text-align: center;">
+            El dispositivo está en modo de bajo consumo.<br>
+            La recepción FT8 y la cascada están pausadas, y no se permiten operaciones.<br>
+            Desactiva el interruptor para volver al modo normal.
+        </p>
+    </div>
+
+    <!-- Main Interface -->
+    <div id="app-screen" class="hidden">
+        <!-- ... (resto del contenido) ... -->
+
+        
+        <!-- Top Controls -->
+        <div id="top-left-controls">
+            <span style="font-size: 0.9em;">💤</span>
+            <label class="switch">
+                <input type="checkbox" id="sleep-toggle" onclick="toggleSleep()" checked>
+                <span class="slider"></span>
+            </label>
+            <span style="font-size: 0.9em;">⚡</span>
+        </div>
+
+        <button id="logout-btn" onclick="logout()">X</button>
+
+        <!-- Titles -->
+        <h1>📡 Monitor FT8</h1>
+        <h2 id="clock-display">HORA ACTUAL (UTC): --:--:--.--</h2>
+
+        <!-- Main Content -->
+        <div id="main-container">
+            
+            <!-- Waterfall -->
+            <div id="waterfall-container">
+                <span id="waterfall-label">WATERFALL (300-3000 Hz)</span>
+                <canvas id="wf-canvas" width="449" height="200"></canvas>
+            </div>
+
+            <!-- Console -->
+            <div id="log-container">
+                <div id="log">Esperando conexión...</div>
+            </div>
+
+            <!-- Footer Buttons -->
+            <div id="footer-controls">
+                <button class="action-btn" style="background: #0f0; font-size: 1.2em;" onclick='runFullTestSequence()'>🚀 TEST RX</button>
+                <button class="action-btn" style="background: #d00; color: #fff; font-size: 1.2em;" onclick='sendCQ()'>📡 TX CQ</button>
             </div>
         </div>
     </div>
 
     <script>
-        var socket = new WebSocket('ws://' + location.hostname + '/ws');
-        var isSleepMode = false;
-        
-        socket.onopen = function() { 
-            document.getElementById('log').innerHTML = '<p>✅ Conectado al ESP32</p>'; 
-            syncTime();
+        var socket;
+        var isSpectator = false;
+
+        function initWebSocket() {
+            logToUI('Intentando conectar...');
+            socket = new WebSocket('ws://' + location.hostname + '/ws');
+            socket.binaryType = "arraybuffer";
+
+            socket.onopen = function() { 
+                logToUI('✅ Conectado al ESP32'); 
+                syncTime();
+                checkLogin();
+            };
+
+            socket.onmessage = function(event) {
+                if (typeof event.data === "string") {
+                    var msg = event.data;
+                    if (msg.startsWith("LOGIN_BUSY:")) {
+                        var master = msg.split(":")[1];
+                        showBusyModal(master);
+                    } else if (msg === "LOGOUT_OK") {
+                        localStorage.removeItem('callsign');
+                        localStorage.removeItem('grid');
+                        location.reload();
+                    } else {
+                        logToUI(msg);
+                    }
+                } else {
+                    drawWaterfall(event.data);
+                }
+            };
+
+            socket.onclose = function() { 
+                logToUI("Desconectado. Reconectando..."); 
+                setTimeout(initWebSocket, 2000); 
+            };
             
-            // Auto-login
-            var savedCall = localStorage.getItem('callsign');
-            var savedGrid = localStorage.getItem('grid');
-            if (savedCall && savedGrid) {
-                socket.send("LOGIN:" + savedCall + ":" + savedGrid);
-                document.getElementById('login-screen').classList.add('hidden');
-                document.getElementById('main-screen').classList.remove('hidden');
-            }
-        };
-        
-        function logToUI(msg) {
-            var log = document.getElementById('log');
-            log.innerHTML += '<p>' + msg + '</p>';
-            log.scrollTop = log.scrollHeight;
+            socket.onerror = function(error) {
+                console.log("Error WebSocket", error);
+            };
         }
 
-        socket.onmessage = function(event) { 
-            logToUI(event.data);
-        };
+        // Iniciar conexión al cargar
+        initWebSocket();
+
+        // --- Login Logic ---
+        function checkLogin() {
+            var call = localStorage.getItem('callsign');
+            var grid = localStorage.getItem('grid');
+            if (call && grid) {
+                document.getElementById('callsign').value = call;
+                document.getElementById('grid').value = grid;
+                socket.send("LOGIN:" + call + ":" + grid);
+                showApp();
+            }
+        }
 
         function login() {
             var call = document.getElementById('callsign').value.toUpperCase().trim();
             var grid = document.getElementById('grid').value.toUpperCase().trim();
-
-            if (call === "" || grid === "") {
-                alert("Por favor complete ambos campos.");
-                return;
+            if (call && grid) {
+                localStorage.setItem('callsign', call);
+                localStorage.setItem('grid', grid);
+                if (socket.readyState === WebSocket.OPEN) {
+                    socket.send("LOGIN:" + call + ":" + grid);
+                    showApp();
+                } else {
+                    alert("No hay conexión con el servidor.");
+                }
+            } else {
+                alert("Datos incompletos");
             }
-
-            // Save session
-            localStorage.setItem('callsign', call);
-            localStorage.setItem('grid', grid);
-
-            // Send login data to ESP32
-            socket.send("LOGIN:" + call + ":" + grid);
-
-            // Switch views
-            document.getElementById('login-screen').classList.add('hidden');
-            document.getElementById('main-screen').classList.remove('hidden');
         }
 
         function logout() {
+            if (confirm("¿Cerrar sesión y liberar control?")) {
+                localStorage.removeItem('callsign');
+                localStorage.removeItem('grid');
+                socket.send("LOGOUT");
+                location.reload();
+            }
+        }
+
+        function showApp() {
+            document.getElementById('login-screen').classList.add('hidden');
+            document.getElementById('app-screen').classList.remove('hidden');
+        }
+
+        function showBusyModal(masterCall) {
+            // Crear modal dinámicamente si no existe
+            var modal = document.getElementById('busy-modal');
+            if (!modal) {
+                modal = document.createElement('div');
+                modal.id = 'busy-modal';
+                modal.innerHTML = `
+                    <div style="background:#111; padding:20px; border:1px solid #d00; text-align:center; max-width:300px;">
+                        <h2 style="color:#d00;">⚠️ SISTEMA EN USO</h2>
+                        <p>El usuario <b>${masterCall}</b> tiene el control.</p>
+                        <div style="display:flex; gap:10px; justify-content:center; margin-top:20px;">
+                            <button class="action-btn" onclick="enterSpectatorMode()">👁️ MODO ESPECTADOR</button>
+                            <button class="action-btn" onclick="exitBusyMode()">SALIR</button>
+                        </div>
+                    </div>
+                `;
+                document.body.appendChild(modal);
+            }
+        }
+
+        function exitBusyMode() {
             localStorage.removeItem('callsign');
             localStorage.removeItem('grid');
             location.reload();
         }
 
-        function toggleLed() {
-            socket.send('TOGGLE_LED');
+        function enterSpectatorMode() {
+            isSpectator = true;
+            document.body.classList.add('spectator-mode');
+            var modal = document.getElementById('busy-modal');
+            if (modal) modal.remove();
+            showApp();
+            logToUI("👁️ Modo Espectador Activo (Solo lectura)");
+            
+            // Deshabilitar controles
+            document.getElementById('sleep-toggle').disabled = true;
+            document.getElementById('sleep-toggle-big').disabled = true;
+            document.getElementById('logout-btn').style.display = 'none';
+            // Deshabilitar botones del footer
+            var footerBtns = document.querySelectorAll('#footer-controls button');
+            footerBtns.forEach(btn => btn.disabled = true);
         }
 
-        function toggleSleep() {
-            var toggle = document.getElementById('sleep-toggle');
-            // Logic: 
-            // Checked (Right) = Performance Mode (⚡)
-            // Unchecked (Left) = Sleep Mode (💤)
+        // --- Waterfall Logic ---
+        const canvas = document.getElementById('wf-canvas');
+        const ctx = canvas.getContext('2d');
+        
+        function drawWaterfall(buffer) {
+            const data = new Uint8Array(buffer);
+            const width = canvas.width;
+            const height = canvas.height;
+            const imgData = ctx.createImageData(width, height);
             
-            // We send TOGGLE_SLEEP to ESP32 which flips its state.
-            // Ideally we should have explicit ON/OFF commands, but TOGGLE works if synced.
-            // Since we just clicked it, the state changed.
-            socket.send('TOGGLE_SLEEP');
-            
-            if (toggle.checked) {
-                // Now in Performance Mode
-                // logToUI("⚡ Modo Rendimiento"); // ESP32 already sends log
-            } else {
-                // Now in Sleep Mode
-                // logToUI("💤 Modo Ahorro");
+            for (let i = 0; i < data.length; i++) {
+                const val = data[i];
+                let r, g, b;
+                // Mapa de calor ajustado: Fondo Azul
+                if (val < 100) {
+                    r = 0; g = 0; b = Math.floor(val * 2.55);
+                } else if (val < 160) {
+                    let p = (val - 100) / 60;
+                    r = 0; g = Math.floor(p * 255); b = 255;
+                } else if (val < 220) {
+                    let p = (val - 160) / 60;
+                    r = 0; g = 255; b = Math.floor((1-p) * 255);
+                } else {
+                    let p = (val - 220) / 35;
+                    r = Math.floor(p * 255); g = Math.floor((1-p) * 255); b = 0;
+                }
+                
+                const idx = i * 4;
+                imgData.data[idx] = r;
+                imgData.data[idx+1] = g;
+                imgData.data[idx+2] = b;
+                imgData.data[idx+3] = 255;
+            }
+            ctx.putImageData(imgData, 0, 0);
+            logToUI("📊 Waterfall actualizada (" + data.length + " bytes)");
+        }
+
+        function logToUI(msg) {
+            var log = document.getElementById('log');
+            var p = document.createElement('p');
+            p.innerText = msg;
+            log.appendChild(p);
+            document.getElementById('log-container').scrollTop = document.getElementById('log-container').scrollHeight;
+        }
+
+        // --- Test Sequence Logic ---
+        function delay(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+
+        function sendCQ() {
+            if (isSpectator) return;
+            if (confirm("¿Transmitir CQ ahora? (Esto generará audio)")) {
+                socket.send("TX_CQ");
             }
         }
 
-        function getCallsign() {
-            socket.send('GET_CALLSIGN');
+        async function runFullTestSequence() {
+            if (isSpectator) return;
+            logToUI("🚀 Iniciando Secuencia de Test...");
+            
+            // 1. Blink LED
+            logToUI("1️⃣ Blink LED...");
+            socket.send("TOGGLE_LED"); await delay(500);
+            socket.send("TOGGLE_LED"); await delay(500);
+            socket.send("TOGGLE_LED"); await delay(500);
+            socket.send("TOGGLE_LED"); await delay(500);
+
+            // 2. Get Data
+            logToUI("2️⃣ Obteniendo Datos...");
+            socket.send("GET_CALLSIGN"); await delay(200);
+            socket.send("GET_GRID"); await delay(200);
+
+            // 3. Start Test
+            logToUI("3️⃣ Iniciando Decodificación...");
+            socket.send("START_TEST");
         }
 
-        function getGrid() {
-            socket.send('GET_GRID');
+        function toggleSleep() { 
+            if (isSpectator) return;
+            // Sincronizar estado visual
+            var bigSwitch = document.getElementById('sleep-toggle-big');
+            var smallSwitch = document.getElementById('sleep-toggle');
+            
+            var isPerformanceMode = smallSwitch.checked;
+            
+            // Detectar origen del evento para sincronizar
+            if (event && event.target.id === 'sleep-toggle-big') {
+                isPerformanceMode = bigSwitch.checked;
+                smallSwitch.checked = isPerformanceMode;
+            } else if (event && event.target.id === 'sleep-toggle') {
+                isPerformanceMode = smallSwitch.checked;
+                bigSwitch.checked = isPerformanceMode;
+            }
+
+            socket.send('TOGGLE_SLEEP'); 
+
+            // Mostrar/Ocultar Pantalla Sleep
+            var sleepScreen = document.getElementById('sleep-screen');
+            if (!isPerformanceMode) {
+                sleepScreen.classList.add('active');
+            } else {
+                sleepScreen.classList.remove('active');
+            }
         }
 
         function syncTime() {
-            // Intentamos obtener hora de internet con un timeout corto (1s)
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 1000);
-
-            fetch('https://worldtimeapi.org/api/ip', { signal: controller.signal })
-                .then(response => response.json())
-                .then(data => {
-                    var now = data.unixtime;
-                    socket.send('SYNC_TIME:' + now);
-                    logToUI("🌐 Sincronizado vía Internet (API)");
-                })
-                .catch(error => {
-                    // Fallback inmediato a la hora del dispositivo (que asumimos correcta por 4G/LTE)
-                    var now = Math.floor(Date.now() / 1000);
-                    socket.send('SYNC_TIME:' + now);
-                    logToUI("📱 Sincronizado (Hora del Dispositivo Cliente)");
-                });
+             var now = Math.floor(Date.now() / 1000);
+             if (socket.readyState === WebSocket.OPEN) {
+                socket.send('SYNC_TIME:' + now);
+             }
         }
 
         function updateClock() {
@@ -258,14 +568,17 @@
             var seconds = String(now.getUTCSeconds()).padStart(2, '0');
             var millis = String(Math.floor(now.getUTCMilliseconds() / 10)).padStart(2, '0');
             
-            document.getElementById('clock-display').innerText = 
-                "HORA ACTUAL (UTC): " + hours + ":" + minutes + ":" + seconds + "." + millis;
+            var timeStr = hours + ":" + minutes + ":" + seconds + "." + millis;
+            
+            document.getElementById('clock-display').innerText = "HORA ACTUAL (UTC): " + timeStr;
+            
+            var sleepClock = document.getElementById('sleep-clock');
+            if (sleepClock) {
+                sleepClock.innerText = timeStr + " UTC";
+            }
         }
-
-        // Sincronizar tiempo cada 60 segundos
-        setInterval(syncTime, 60000);
-        // Actualizar reloj localmente cada 50ms
-        setInterval(updateClock, 50);
+        setInterval(updateClock, 50); 
+        updateClock();
     </script>
 </body>
 </html>

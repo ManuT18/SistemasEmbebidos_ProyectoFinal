@@ -31,33 +31,83 @@ static const char *TAG = "WEB_IF";
 
 // Handle global del servidor
 static httpd_handle_t server = NULL;
-// Handle del cliente WebSocket (asumimos uno solo por simplicidad para este prototipo)
-static int g_client_fd = -1;
-// Callback de login
+// Array de clientes WebSocket
+#define MAX_CLIENTS 4
+static int g_client_fds[MAX_CLIENTS];
+
+// Rol de Maestro
+static int g_master_fd = -1;
+static char g_master_call[16] = {0};
+static char g_master_grid[8] = {0};
+
+// Variables globales para callbacks
 static web_login_cb_t g_login_cb = NULL;
-// Callbacks de proveedores de datos
 static web_get_data_cb_t g_get_call_cb = NULL;
 static web_get_data_cb_t g_get_grid_cb = NULL;
+static web_test_cb_t g_test_cb = NULL;
+static web_tx_cq_cb_t g_tx_cq_cb = NULL;
 
-/* ... (WiFi functions omitted for brevity) ... */
+// Prototipos de funciones estáticas
+static void init_clients(void);
+static void add_client(int fd);
+static void remove_client(int fd);
+static void iniciar_wifi_ap(void);
+static void start_webserver(void);
 
-/* ===============================================================
-   2. SERVIDOR WEB Y WEBSOCKETS
-   =============================================================== */
+static void init_clients(void) {
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        g_client_fds[i] = -1;
+    }
+}
 
-// ... (HTML handler omitted) ...
+static void add_client(int fd) {
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        if (g_client_fds[i] == fd) return; // Ya existe
+    }
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        if (g_client_fds[i] == -1) {
+            g_client_fds[i] = fd;
+            return;
+        }
+    }
+}
 
+static void remove_client(int fd) {
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        if (g_client_fds[i] == fd) {
+            g_client_fds[i] = -1;
+        }
+    }
+    if (g_master_fd == fd) {
+        // Si el maestro se desconecta abruptamente, ¿liberamos? 
+        // Por seguridad, NO liberamos inmediatamente para evitar robo de sesión por desconexión temporal.
+        // Solo liberamos con LOGOUT explícito.
+        // g_master_fd = -1; 
+    }
+}
 
+// Referencias al archivo HTML embebido
+extern const uint8_t index_html_start[] asm("_binary_index_html_start");
+extern const uint8_t index_html_end[]   asm("_binary_index_html_end");
+
+// Handler de la página web "/"
+static esp_err_t pagina_inicio_handler(httpd_req_t *req)
+{
+    httpd_resp_send(req, (const char *)index_html_start, index_html_end - index_html_start);
+    return ESP_OK;
+}
+
+// Event Handler para WiFi
 static void wifi_event_handler(void* arg, esp_event_base_t event_base,
-                                int32_t event_id, void* event_data)
+                               int32_t event_id, void* event_data)
 {
     if (event_id == WIFI_EVENT_AP_STACONNECTED) {
         wifi_event_ap_staconnected_t* event = (wifi_event_ap_staconnected_t*) event_data;
-        ESP_LOGI(TAG, "¡Cliente conectado! MAC: "MACSTR", ID: %d",
+        ESP_LOGI(TAG, "Estación conectada: "MACSTR" join, AID=%d",
                  MAC2STR(event->mac), event->aid);
     } else if (event_id == WIFI_EVENT_AP_STADISCONNECTED) {
         wifi_event_ap_stadisconnected_t* event = (wifi_event_ap_stadisconnected_t*) event_data;
-        ESP_LOGI(TAG, "Cliente desconectado. MAC: "MACSTR", ID: %d",
+        ESP_LOGI(TAG, "Estación desconectada: "MACSTR" leave, AID=%d",
                  MAC2STR(event->mac), event->aid);
     }
 }
@@ -98,19 +148,26 @@ static void iniciar_wifi_ap(void)
     ESP_LOGI(TAG, "Access Point iniciado correctamente. SSID: %s", NOMBRE_RED);
 }
 
-/* ===============================================================
-   2. SERVIDOR WEB Y WEBSOCKETS
-   =============================================================== */
-
-// Referencias al archivo HTML embebido
-extern const uint8_t index_html_start[] asm("_binary_index_html_start");
-extern const uint8_t index_html_end[]   asm("_binary_index_html_end");
-
-// Handler de la página web "/"
-static esp_err_t pagina_inicio_handler(httpd_req_t *req)
+// Implementación de web_interface_send_log (necesaria para echo_handler)
+void web_interface_send_log(const char *msg)
 {
-    httpd_resp_send(req, (const char *)index_html_start, index_html_end - index_html_start);
-    return ESP_OK;
+    if (server == NULL) return;
+
+    httpd_ws_frame_t ws_pkt;
+    memset(&ws_pkt, 0, sizeof(httpd_ws_frame_t));
+    ws_pkt.payload = (uint8_t*)msg;
+    ws_pkt.len = strlen(msg);
+    ws_pkt.type = HTTPD_WS_TYPE_TEXT;
+
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        int fd = g_client_fds[i];
+        if (fd >= 0) {
+            esp_err_t ret = httpd_ws_send_frame_async(server, fd, &ws_pkt);
+            if (ret != ESP_OK) {
+                remove_client(fd);
+            }
+        }
+    }
 }
 
 // Handler del WebSocket "/ws"
@@ -118,7 +175,8 @@ static esp_err_t echo_handler(httpd_req_t *req)
 {
     if (req->method == HTTP_GET) {
         ESP_LOGI(TAG, "Handshake WebSocket realizado");
-        g_client_fd = httpd_req_to_sockfd(req);
+        int fd = httpd_req_to_sockfd(req);
+        add_client(fd);
         return ESP_OK;
     }
 
@@ -141,78 +199,112 @@ static esp_err_t echo_handler(httpd_req_t *req)
             free(buf);
             return ret;
         }
-        ESP_LOGI(TAG, "Recibido por WS: %s", ws_pkt.payload);
         
-        // Actualizamos el FD del cliente activo
-        g_client_fd = httpd_req_to_sockfd(req);
+        int current_fd = httpd_req_to_sockfd(req);
+        add_client(current_fd); // Asegurar que está en la lista
 
         // Lógica de Mensajes
         char *payload = (char*)ws_pkt.payload;
         
-        if (strcmp(payload, "TOGGLE_LED") == 0) {
-            static int led_state = 0;
-            led_state = !led_state;
-            gpio_set_level(LED_GPIO, led_state);
-            
-            const char* msg = led_state ? "LED ENCENDIDO" : "LED APAGADO";
-            web_interface_send_log(msg);
-            
-        } else if (strcmp(payload, "TOGGLE_SLEEP") == 0) {
-            static int sleep_mode = 0;
-            sleep_mode = !sleep_mode;
-            
-            if (sleep_mode) {
-                // Activar Modo Ahorro (Light Sleep / Modem Sleep)
-                esp_wifi_set_ps(WIFI_PS_MAX_MODEM);
-                gpio_set_level(LED_GPIO, 0); // Apagar LED para ahorrar
-                web_interface_send_log("💤 Modo Ahorro ACTIVADO (WiFi Low Power)");
-            } else {
-                // Despertar / Modo Rendimiento
-                esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
-                web_interface_send_log("⚡ Modo Rendimiento ACTIVADO");
-            }
-
-        } else if (strncmp(payload, "LOGIN:", 6) == 0) {
+        if (strncmp(payload, "LOGIN:", 6) == 0) {
+            ESP_LOGI(TAG, "CMD LOGIN recibido: %s", payload);
             // Formato: LOGIN:CALLSIGN:GRID
             char *call = strtok(payload + 6, ":");
             char *grid = strtok(NULL, ":");
             
             if (call && grid) {
-                ESP_LOGI(TAG, "Login recibido: %s / %s", call, grid);
-                if (g_login_cb) {
-                    g_login_cb(call, grid);
+                ESP_LOGI(TAG, "Login Parseado: Call=%s, Grid=%s", call, grid);
+                // Verificar estado de Maestro
+                if (g_master_fd == -1) {
+                    ESP_LOGI(TAG, "Sistema Libre. Asignando Maestro a FD=%d", current_fd);
+                    // Sistema Libre -> Asignar Maestro
+                    g_master_fd = current_fd;
+                    strncpy(g_master_call, call, sizeof(g_master_call)-1);
+                    strncpy(g_master_grid, grid, sizeof(g_master_grid)-1);
+                    
+                    // Guardar en NVS
+                    if (g_login_cb) g_login_cb(call, grid);
+                    
+                    web_interface_send_log("Login OK. Eres el Maestro.");
+                    
+                } else {
+                    ESP_LOGI(TAG, "Sistema Ocupado por %s. Verificando reconexión...", g_master_call);
+                    // Sistema Ocupado -> Verificar credenciales
+                    if (strcmp(g_master_call, call) == 0 && strcmp(g_master_grid, grid) == 0) {
+                        // Es el maestro reconectándose
+                        g_master_fd = current_fd;
+                        web_interface_send_log("Login OK. Reconexión Maestro.");
+                    } else {
+                        ESP_LOGW(TAG, "Intento de acceso denegado (Ocupado). Ofreciendo espectador.");
+                        // Es otro usuario -> RECHAZAR / OFRECER ESPECTADOR
+                        // Enviar mensaje especial solo a este cliente
+                        httpd_ws_frame_t resp;
+                        memset(&resp, 0, sizeof(httpd_ws_frame_t));
+                        char msg[64];
+                        snprintf(msg, sizeof(msg), "LOGIN_BUSY:%s", g_master_call);
+                        resp.payload = (uint8_t*)msg;
+                        resp.len = strlen(msg);
+                        resp.type = HTTPD_WS_TYPE_TEXT;
+                        httpd_ws_send_frame(req, &resp);
+                        
+                        free(buf);
+                        return ESP_OK;
+                    }
                 }
-                web_interface_send_log("Login OK. Datos recibidos.");
+            } else {
+                ESP_LOGE(TAG, "Error parseando LOGIN. Call o Grid nulos.");
             }
             
+        } else if (strcmp(payload, "LOGOUT") == 0) {
+             if (current_fd == g_master_fd) {
+                 // Borrar datos
+                 g_master_fd = -1;
+                 memset(g_master_call, 0, sizeof(g_master_call));
+                 memset(g_master_grid, 0, sizeof(g_master_grid));
+                 
+                 web_interface_send_log("LOGOUT_OK");
+             }
+
+        } else if (strcmp(payload, "TOGGLE_LED") == 0) {
+            if (current_fd == g_master_fd) {
+                static int led_state = 0;
+                led_state = !led_state;
+                gpio_set_level(LED_GPIO, led_state);
+                web_interface_send_log(led_state ? "LED ENCENDIDO" : "LED APAGADO");
+            }
+
+        } else if (strcmp(payload, "TOGGLE_SLEEP") == 0) {
+            if (current_fd == g_master_fd) {
+                static int sleep_mode = 0;
+                sleep_mode = !sleep_mode;
+                if (sleep_mode) {
+                    esp_wifi_set_ps(WIFI_PS_MAX_MODEM);
+                    gpio_set_level(LED_GPIO, 0);
+                    web_interface_send_log("💤 Modo Ahorro ACTIVADO");
+                } else {
+                    esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
+                    web_interface_send_log("⚡ Modo Rendimiento ACTIVADO");
+                }
+            }
+
         } else if (strncmp(payload, "SYNC_TIME:", 10) == 0) {
+            // Permitido a todos
             long timestamp = atol(payload + 10);
             if (timestamp > 0) {
                 struct timeval tv;
                 tv.tv_sec = timestamp;
                 tv.tv_usec = 0;
                 settimeofday(&tv, NULL);
-
-                // Obtener hora actual UTC
-                time_t now;
-                struct tm timeinfo;
-                time(&now);
-                gmtime_r(&now, &timeinfo);
-                
-                // char time_str[64];
-                // strftime(time_str, sizeof(time_str), "Tiempo sincronizado: %H:%M:%S", &timeinfo);
-                // web_interface_send_log(time_str);
             }
 
         } else if (strcmp(payload, "GET_CALLSIGN") == 0) {
+            // Permitido a todos (para ver quién está)
             if (g_get_call_cb) {
                 char buf[32];
                 g_get_call_cb(buf, sizeof(buf));
                 char msg[64];
                 snprintf(msg, sizeof(msg), "Callsign actual: %s", buf);
                 web_interface_send_log(msg);
-            } else {
-                web_interface_send_log("Error: Proveedor de Callsign no registrado");
             }
             
         } else if (strcmp(payload, "GET_GRID") == 0) {
@@ -222,21 +314,28 @@ static esp_err_t echo_handler(httpd_req_t *req)
                 char msg[64];
                 snprintf(msg, sizeof(msg), "Grid actual: %s", buf);
                 web_interface_send_log(msg);
-            } else {
-                web_interface_send_log("Error: Proveedor de Grid no registrado");
             }
 
-        } else {
-            // Echo normal
-            char respuesta[100];
-            sprintf(respuesta, "ESP32 Recibió: %s", payload);
-            
-            // Reutilizamos ws_pkt para enviar
-            ws_pkt.payload = (uint8_t*)respuesta;
-            ws_pkt.len = strlen(respuesta);
-            ws_pkt.type = HTTPD_WS_TYPE_TEXT; 
-            httpd_ws_send_frame(req, &ws_pkt);
-        }
+        } else if (strcmp(payload, "START_TEST") == 0) {
+            if (current_fd == g_master_fd) {
+                if (g_test_cb) {
+                    g_test_cb();
+                    web_interface_send_log("▶️ Test Iniciado...");
+                }
+            }
+        } else if (strcmp(payload, "TX_CQ") == 0) {
+            if (current_fd == g_master_fd) {
+                if (g_tx_cq_cb) {
+                    if (g_tx_cq_cb(g_master_call, g_master_grid)) {
+                        // web_interface_send_log("Solicitud TX aceptada");
+                    } else {
+                        web_interface_send_log("⚠️ TX Ocupado o Error");
+                    }
+                } else {
+                    web_interface_send_log("⚠️ Función TX no registrada");
+                }
+            }
+        } 
 
         free(buf);
     }
@@ -280,13 +379,14 @@ void web_interface_init(void)
 {
     ESP_LOGI(TAG, "Inicializando Interfaz Web...");
     
+    init_clients(); // Inicializar lista de clientes
+    
     // Configurar LED
     gpio_reset_pin(LED_GPIO);
     gpio_set_direction(LED_GPIO, GPIO_MODE_OUTPUT);
     gpio_set_level(LED_GPIO, 0);
 
     // Inicializar Netif y Event Loop si no se ha hecho antes
-    // (Asumimos que nvs_flash_init ya se llamó en main)
     esp_netif_init();
     esp_event_loop_create_default();
 
@@ -305,17 +405,33 @@ void web_interface_register_data_providers(web_get_data_cb_t get_call, web_get_d
     g_get_grid_cb = get_grid;
 }
 
-void web_interface_send_log(const char *msg)
+void web_interface_set_test_callback(web_test_cb_t cb)
 {
-    if (server == NULL || g_client_fd < 0) {
-        return;
-    }
+    g_test_cb = cb;
+}
+
+void web_interface_set_tx_cq_callback(web_tx_cq_cb_t cb)
+{
+    g_tx_cq_cb = cb;
+}
+
+void web_interface_send_binary(const uint8_t *data, size_t len)
+{
+    if (server == NULL) return;
 
     httpd_ws_frame_t ws_pkt;
     memset(&ws_pkt, 0, sizeof(httpd_ws_frame_t));
-    ws_pkt.payload = (uint8_t*)msg;
-    ws_pkt.len = strlen(msg);
-    ws_pkt.type = HTTPD_WS_TYPE_TEXT;
+    ws_pkt.payload = (uint8_t*)data;
+    ws_pkt.len = len;
+    ws_pkt.type = HTTPD_WS_TYPE_BINARY;
 
-    httpd_ws_send_frame_async(server, g_client_fd, &ws_pkt);
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        int fd = g_client_fds[i];
+        if (fd >= 0) {
+            esp_err_t ret = httpd_ws_send_frame_async(server, fd, &ws_pkt);
+            if (ret != ESP_OK) {
+                remove_client(fd);
+            }
+        }
+    }
 }

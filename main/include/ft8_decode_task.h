@@ -34,3 +34,11 @@
  * @param pvParameters Parámetros de FreeRTOS (no utilizado actualmente).
  */
 void ft8_decode_task(void *pvParameters);
+
+/**
+ * @brief Inicia un ciclo de prueba de decodificación FT8 (WAVs embebidos).
+ * 
+ * Esta función activa la bandera para que la tarea de decodificación comience
+ * a procesar los archivos de prueba.
+ */
+void ft8_start_test(void);
