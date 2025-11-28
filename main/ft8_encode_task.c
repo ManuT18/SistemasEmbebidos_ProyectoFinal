@@ -9,12 +9,15 @@
 #include "web_interface.h" // Para enviar logs a la web
 #include <math.h>
 #include <string.h>
+#include <sys/time.h>
+#include <time.h>
 
 static const char *TAG = "FT8_TX";
 
 // Configuración de Audio
+// Configuración de Audio
 #define TX_SAMPLE_RATE 12000
-#define TX_BASE_FREQ   1000.0f // Frecuencia base de transmisión (Hz)
+// #define TX_BASE_FREQ   1000.0f // Reemplazado por variable
 #define SYMBOL_PERIOD  0.160f  // Duración de un símbolo FT8 (segundos)
 #define SAMPLES_PER_SYMBOL 1920 // (int)(TX_SAMPLE_RATE * SYMBOL_PERIOD)
 
@@ -22,6 +25,22 @@ static const char *TAG = "FT8_TX";
 static volatile bool g_tx_busy = false;
 static char g_tx_call[16];
 static char g_tx_grid[8];
+static uint16_t g_tx_base_freq = 1000; // Frecuencia por defecto
+
+// ... (audio_buf definition) ...
+
+void ft8_set_tx_freq(uint16_t freq) {
+    if (freq >= 100 && freq <= 3000) {
+        g_tx_base_freq = freq;
+        ESP_LOGI(TAG, "Frecuencia TX configurada a %d Hz", freq);
+    }
+}
+
+uint16_t ft8_get_tx_freq(void) {
+    return g_tx_base_freq;
+}
+
+// ... (ft8_tx_task definition) ...
 
 // Buffer de audio para un símbolo (1920 muestras * 2 bytes = 3840 bytes)
 // Usamos int16_t para compatibilidad con audio_driver
@@ -34,6 +53,26 @@ static int16_t audio_buf[SAMPLES_PER_SYMBOL];
 static void ft8_tx_task(void *arg)
 {
     ESP_LOGI(TAG, "Iniciando Transmisión CQ: %s %s", g_tx_call, g_tx_grid);
+    
+    // --- Sincronización con Slot de Tiempo (00, 15, 30, 45) ---
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    struct tm *timeinfo = localtime(&tv.tv_sec);
+    int sec = timeinfo->tm_sec;
+    int next_slot = ((sec / 15) + 1) * 15;
+    int wait_sec = next_slot - sec;
+    
+    // Si falta menos de 1 segundo, saltamos al siguiente slot para asegurar inicio limpio
+    if (wait_sec < 1) wait_sec += 15; 
+
+    ESP_LOGI(TAG, "Esperando %d segundos para inicio de slot TX...", wait_sec);
+    
+    char msg_wait[64];
+    snprintf(msg_wait, sizeof(msg_wait), "⏳ TX Programada en %ds...", wait_sec);
+    web_interface_send_log(msg_wait);
+
+    vTaskDelay(pdMS_TO_TICKS(wait_sec * 1000));
+
     web_interface_send_log("📡 TX: Generando mensaje CQ...");
 
     // 1. Codificar Mensaje
@@ -75,7 +114,7 @@ static void ft8_tx_task(void *arg)
     for (int i = 0; i < FT8_NN; i++) {
         // Frecuencia del tono actual
         // FT8 spacing = 6.25 Hz
-        float freq = TX_BASE_FREQ + (tones[i] * 6.25f);
+        float freq = (float)g_tx_base_freq + (tones[i] * 6.25f);
         float d_phase = two_pi * freq * dt;
 
         // Generar muestras para este símbolo
@@ -89,8 +128,8 @@ static void ft8_tx_task(void *arg)
         size_t written = 0;
         audio_write(audio_buf, SAMPLES_PER_SYMBOL, &written);
         
-        // Pequeño yield para no matar el watchdog si audio_write es muy rápido (aunque suele bloquear)
-        if (i % 10 == 0) vTaskDelay(1);
+        // Yield para evitar watchdog
+        vTaskDelay(1);
     }
 
     // Silencio final / Ramp down (opcional, por ahora corte abrupto)
@@ -124,7 +163,7 @@ bool ft8_tx_cq(const char *callsign, const char *grid)
     g_tx_busy = true;
 
     // Crear tarea para no bloquear el contexto actual (Web Server)
-    xTaskCreate(ft8_tx_task, "ft8_tx_task", 4096, NULL, 5, NULL);
+    xTaskCreate(ft8_tx_task, "ft8_tx_task", 16384, NULL, 5, NULL);
 
     return true;
 }

@@ -46,6 +46,8 @@ static web_get_data_cb_t g_get_call_cb = NULL;
 static web_get_data_cb_t g_get_grid_cb = NULL;
 static web_test_cb_t g_test_cb = NULL;
 static web_tx_cq_cb_t g_tx_cq_cb = NULL;
+static web_set_freq_cb_t g_set_freq_cb = NULL;
+static web_get_freq_cb_t g_get_freq_cb = NULL;
 
 // Prototipos de funciones estáticas
 static void init_clients(void);
@@ -335,6 +337,35 @@ static esp_err_t echo_handler(httpd_req_t *req)
                     web_interface_send_log("⚠️ Función TX no registrada");
                 }
             }
+        } else if (strncmp(payload, "SET_FREQ:", 9) == 0) {
+            if (current_fd == g_master_fd) {
+                int freq = atoi(payload + 9);
+                if (freq >= 100 && freq <= 3000) {
+                    if (g_set_freq_cb) {
+                        g_set_freq_cb((uint16_t)freq);
+                        char msg[64];
+                        snprintf(msg, sizeof(msg), "✅ Frecuencia TX ajustada a %d Hz", freq);
+                        web_interface_send_log(msg);
+                    } else {
+                        web_interface_send_log("⚠️ Callback SET_FREQ no registrado");
+                    }
+                } else {
+                    web_interface_send_log("⚠️ Frecuencia inválida (100-3000 Hz)");
+                }
+            }
+        } else if (strcmp(payload, "GET_FREQ") == 0) {
+            if (g_get_freq_cb) {
+                uint16_t freq = g_get_freq_cb(); 
+                char msg[32];
+                snprintf(msg, sizeof(msg), "FREQ:%d", freq);
+                
+                httpd_ws_frame_t resp;
+                memset(&resp, 0, sizeof(httpd_ws_frame_t));
+                resp.payload = (uint8_t*)msg;
+                resp.len = strlen(msg);
+                resp.type = HTTPD_WS_TYPE_TEXT;
+                httpd_ws_send_frame(req, &resp);
+            }
         } 
 
         free(buf);
@@ -413,6 +444,12 @@ void web_interface_set_test_callback(web_test_cb_t cb)
 void web_interface_set_tx_cq_callback(web_tx_cq_cb_t cb)
 {
     g_tx_cq_cb = cb;
+}
+
+void web_interface_register_freq_callbacks(web_set_freq_cb_t set_freq, web_get_freq_cb_t get_freq)
+{
+    g_set_freq_cb = set_freq;
+    g_get_freq_cb = get_freq;
 }
 
 void web_interface_send_binary(const uint8_t *data, size_t len)

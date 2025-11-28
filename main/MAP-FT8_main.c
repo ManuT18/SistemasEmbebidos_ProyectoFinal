@@ -6,18 +6,6 @@
  * de las tareas principales (decodificación, y en el futuro transmisión/web).
  */
 
-#include <stdio.h>
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-/**
- * @file MAP-FT8_main.c
- * @brief Punto de entrada de la aplicación MAP-FT8.
- * 
- * Este archivo se encarga de la inicialización básica del sistema y el lanzamiento
- * de las tareas principales (decodificación, y en el futuro transmisión/web).
- */
-
-#include <stdio.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
@@ -103,11 +91,9 @@ void app_main(void)
     // Registrar callback para transmisión CQ
     web_interface_set_tx_cq_callback(ft8_tx_cq);
 
-    /* 
-     * Nota: La inicialización de audio se maneja dentro de ft8_decode_task
-     * para permitir el modo de prueba (WAV) sin inicializar hardware innecesario.
-     */
-    
+    // Registrar callbacks para configuración de frecuencia
+    web_interface_register_freq_callbacks(ft8_set_tx_freq, ft8_get_tx_freq);
+
     // Crear Tarea de Decodificación
     xTaskCreate(ft8_decode_task, "ft8_decode", FT8_DECODE_TASK_STACK_SIZE, NULL, FT8_DECODE_TASK_PRIORITY, NULL);
 }

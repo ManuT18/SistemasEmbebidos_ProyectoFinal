@@ -72,6 +72,26 @@ typedef bool (*web_tx_cq_cb_t)(const char *callsign, const char *grid);
 void web_interface_set_tx_cq_callback(web_tx_cq_cb_t cb);
 
 /**
+ * @brief Callback function type for setting TX frequency
+ * @param freq Frequency in Hz
+ */
+typedef void (*web_set_freq_cb_t)(uint16_t freq);
+
+/**
+ * @brief Callback function type for getting TX frequency
+ * @return Frequency in Hz
+ */
+typedef uint16_t (*web_get_freq_cb_t)(void);
+
+/**
+ * @brief Register callbacks for frequency configuration
+ * 
+ * @param set_freq Callback to set frequency
+ * @param get_freq Callback to get frequency
+ */
+void web_interface_register_freq_callbacks(web_set_freq_cb_t set_freq, web_get_freq_cb_t get_freq);
+
+/**
  * @brief Send a binary message to the connected WebSocket client
  * 
  * @param data Pointer to the data buffer

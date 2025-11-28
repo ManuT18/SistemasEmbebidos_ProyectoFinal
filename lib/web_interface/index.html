@@ -14,42 +14,98 @@
             flex-direction: column; 
             min-height: 100vh; 
             position: relative; 
+            overflow-x: hidden; 
         }
 
-        /* Top Controls */
-        #top-left-controls {
+        /* Sidebar */
+        #sidebar {
+            position: fixed;
+            top: 0;
+            left: -250px; 
+            width: 250px;
+            height: 100%;
+            background: #111;
+            border-right: 1px solid #333;
+            transition: left 0.3s ease;
+            z-index: 2000;
+            padding-top: 60px; 
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+            overflow-y: auto; /* Permitir scroll si es necesario */
+        }
+        #sidebar.open {
+            left: 0;
+        }
+
+        /* Menu Button */
+        #menu-btn {
             position: absolute;
             top: 15px;
             left: 15px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            z-index: 100;
+            background: transparent;
+            color: #0f0;
+            border: 1px solid #0f0;
+            font-size: 1.5em;
+            cursor: pointer;
+            z-index: 2100; 
+            padding: 5px 10px;
+            border-radius: 4px;
         }
 
-        #logout-btn {
-            position: absolute;
-            top: 15px;
-            right: 15px;
-            background: #d00;
-            color: white;
-            border: none;
-            width: 30px;
-            height: 30px;
+        /* Sidebar Items */
+        .sidebar-item {
+            width: 80%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+            padding: 15px;
+            background: #222;
+            border-radius: 8px;
+            border: 1px solid #333;
+        }
+        
+        .sidebar-label {
+            font-weight: bold;
+            color: #fff;
+            font-size: 0.9em;
+        }
+
+        .sidebar-btn {
+            background: #333;
+            color: #0f0;
+            border: 1px solid #0f0;
+            width: 80%;
+            padding: 10px;
             border-radius: 4px;
             cursor: pointer;
             font-weight: bold;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 100;
+            font-size: 1em;
+            transition: background 0.2s;
+        }
+        .sidebar-btn:hover { background: #444; }
+
+        #logout-btn {
+            background: #d00;
+            color: white;
+            border: none;
+            margin-bottom: 20px;
         }
 
         /* Titles */
         h1 {
             text-align: center;
-            margin: 45px 0 5px 0; /* Aumentado margen superior para evitar solapamiento */
+            margin: 45px 0 5px 0; 
             font-size: 1.8em;
+        }
+
+        h2 {
+            text-align: center;
+            margin: 5px 0 15px 0;
+            font-size: 1.2em;
+            color: #aaa;
         }
 
         #clock-display {
@@ -60,7 +116,7 @@
             font-weight: bold;
         }
 
-        /* Toggle Switch Compact */
+        /* Toggle Switch */
         .switch {
             position: relative;
             display: inline-block;
@@ -72,7 +128,7 @@
             position: absolute;
             cursor: pointer;
             top: 0; left: 0; right: 0; bottom: 0;
-            background-color: #2196F3; /* Default (Unchecked) = Sleep (Azul) */
+            background-color: #2196F3; 
             transition: .2s;
             border-radius: 20px;
         }
@@ -87,8 +143,6 @@
             transition: .4s;
             border-radius: 50%;
         }
-        
-        /* Checked = Performance (Amarillo, Derecha) */
         input:checked + .slider { background-color: #f3cd21; }
         input:checked + .slider:before { transform: translateX(15px); }
 
@@ -97,12 +151,11 @@
             flex: 1;
             display: flex;
             flex-direction: column;
-            padding: 0 5% 10px 5%; /* Ajustado padding superior */
+            padding: 0 5% 10px 5%; 
             gap: 10px;
-            /* overflow: hidden; Eliminado para permitir scroll */
         }
 
-        /* Waterfall Section */
+        /* Waterfall */
         #waterfall-container {
             flex: 2;
             background: #000;
@@ -130,7 +183,7 @@
             pointer-events: none;
         }
 
-        /* Console Section */
+        /* Console */
         #log-container {
             height: 300px;
             min-height: 300px;
@@ -143,7 +196,7 @@
         }
         #log p { margin: 2px 0; border-bottom: 1px solid #111; }
 
-        /* Footer Buttons */
+        /* Footer */
         #footer-controls {
             display: flex;
             justify-content: space-between;
@@ -175,7 +228,7 @@
             justify-content: center;
             align-items: center;
             gap: 20px;
-            z-index: 1000;
+            z-index: 3000; 
         }
         .login-input {
             padding: 10px;
@@ -197,7 +250,7 @@
             flex-direction: column;
             justify-content: center;
             align-items: center;
-            z-index: 2000; /* Por encima de todo */
+            z-index: 2500; 
             opacity: 0;
             visibility: hidden;
             transition: opacity 0.5s ease, visibility 0.5s;
@@ -218,11 +271,10 @@
             left: 4px;
             bottom: 4px;
         }
-        
-        /* Checked = Performance (Amarillo, Derecha) para Big Switch */
         .big-switch input:checked + .slider { background-color: #f3cd21; }
-        /* Busy Modal */
-        #busy-modal {
+
+        /* Modals */
+        .modal {
             position: fixed;
             top: 0; left: 0; width: 100%; height: 100%;
             background: rgba(0,0,0,0.9);
@@ -231,15 +283,33 @@
             align-items: center;
             z-index: 3000;
         }
+        .modal-content {
+            background: #111;
+            padding: 20px;
+            border: 1px solid #0f0;
+            border-radius: 8px;
+            text-align: center;
+            min-width: 300px;
+        }
+        .modal-input {
+            padding: 8px;
+            background: #222;
+            color: #fff;
+            border: 1px solid #555;
+            width: 100px;
+            text-align: center;
+            margin: 10px;
+        }
 
         /* Spectator Mode */
         .spectator-mode #main-container {
             border: 2px solid #d00;
         }
-        .spectator-mode .action-btn {
+        .spectator-mode .action-btn, .spectator-mode .sidebar-btn {
             background: #333 !important;
             color: #888 !important;
             cursor: not-allowed;
+            pointer-events: none;
         }
     </style>
 </head>
@@ -270,31 +340,57 @@
 
         <p style="color: #888; max-width: 80%; text-align: center;">
             El dispositivo está en modo de bajo consumo.<br>
-            La recepción FT8 y la cascada están pausadas, y no se permiten operaciones.<br>
+            La recepción FT8 y la cascada están pausadas.<br>
             Desactiva el interruptor para volver al modo normal.
         </p>
     </div>
 
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="modal hidden">
+        <div class="modal-content">
+            <h2>⚙️ CONFIGURACIÓN</h2>
+            
+            <div style="margin: 20px 0;">
+                <label>Frecuencia TX (Hz):</label><br>
+                <input type="number" id="tx-freq-input" class="modal-input" min="100" max="3000" value="1000">
+            </div>
+
+            <div style="display: flex; gap: 10px; justify-content: center;">
+                <button class="action-btn" onclick="saveSettings()">GUARDAR</button>
+                <button class="action-btn" style="background: #d00; color: #fff;" onclick="closeSettings()">CANCELAR</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Main Interface -->
     <div id="app-screen" class="hidden">
-        <!-- ... (resto del contenido) ... -->
-
         
-        <!-- Top Controls -->
-        <div id="top-left-controls">
-            <span style="font-size: 0.9em;">💤</span>
-            <label class="switch">
-                <input type="checkbox" id="sleep-toggle" onclick="toggleSleep()" checked>
-                <span class="slider"></span>
-            </label>
-            <span style="font-size: 0.9em;">⚡</span>
+        <!-- Menu Button -->
+        <button id="menu-btn" onclick="toggleSidebar()">☰</button>
+
+        <!-- Sidebar -->
+        <div id="sidebar">
+            <button id="logout-btn" class="sidebar-btn" onclick="logout()">CERRAR SESIÓN</button>
+
+            <div class="sidebar-item">
+                <span class="sidebar-label">MODO ENERGÍA</span>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <span style="font-size: 0.9em;">💤</span>
+                    <label class="switch">
+                        <input type="checkbox" id="sleep-toggle" onclick="toggleSleep()" checked>
+                        <span class="slider"></span>
+                    </label>
+                    <span style="font-size: 0.9em;">⚡</span>
+                </div>
+            </div>
+
+            <button class="sidebar-btn" onclick="openSettings()">⚙️ CONFIGURACIÓN</button>
         </div>
 
-        <button id="logout-btn" onclick="logout()">X</button>
-
         <!-- Titles -->
-        <h1>📡 Monitor FT8</h1>
-        <h2 id="clock-display">HORA ACTUAL (UTC): --:--:--.--</h2>
+        <h1>📡 MAP-FT8</h1>
+        <h2>Modem Autonomo Portable FT8</h2>
+        <h3 id="clock-display">HORA ACTUAL (UTC): --:--:--.--</h3>
 
         <!-- Main Content -->
         <div id="main-container">
@@ -310,10 +406,10 @@
                 <div id="log">Esperando conexión...</div>
             </div>
 
-            <!-- Footer Buttons -->
+            <!-- Footer Controls -->
             <div id="footer-controls">
-                <button class="action-btn" style="background: #0f0; font-size: 1.2em;" onclick='runFullTestSequence()'>🚀 TEST RX</button>
-                <button class="action-btn" style="background: #d00; color: #fff; font-size: 1.2em;" onclick='sendCQ()'>📡 TX CQ</button>
+                <button class="action-btn" onclick="sendCQ()">📢 TX CQ</button>
+                <button class="action-btn" onclick="runFullTestSequence()">🚀 TEST COMPLETO</button>
             </div>
         </div>
     </div>
@@ -323,37 +419,39 @@
         var isSpectator = false;
 
         function initWebSocket() {
-            logToUI('Intentando conectar...');
-            socket = new WebSocket('ws://' + location.hostname + '/ws');
-            socket.binaryType = "arraybuffer";
-
-            socket.onopen = function() { 
-                logToUI('✅ Conectado al ESP32'); 
-                syncTime();
+            var wsUrl = "ws://" + location.host + "/ws";
+            socket = new WebSocket(wsUrl);
+            
+            socket.onopen = function() {
+                console.log("WebSocket Conectado");
                 checkLogin();
             };
-
+            
             socket.onmessage = function(event) {
                 if (typeof event.data === "string") {
                     var msg = event.data;
                     if (msg.startsWith("LOGIN_BUSY:")) {
                         var master = msg.split(":")[1];
                         showBusyModal(master);
-                    } else if (msg === "LOGOUT_OK") {
-                        localStorage.removeItem('callsign');
-                        localStorage.removeItem('grid');
-                        location.reload();
+                    } else if (msg.startsWith("FREQ:")) {
+                        var freq = msg.split(":")[1];
+                        document.getElementById('tx-freq-input').value = freq;
                     } else {
                         logToUI(msg);
                     }
                 } else {
-                    drawWaterfall(event.data);
+                    // Binary data (Waterfall)
+                    var reader = new FileReader();
+                    reader.onload = function() {
+                        drawWaterfall(reader.result);
+                    };
+                    reader.readAsArrayBuffer(event.data);
                 }
             };
-
-            socket.onclose = function() { 
-                logToUI("Desconectado. Reconectando..."); 
-                setTimeout(initWebSocket, 2000); 
+            
+            socket.onclose = function() {
+                console.log("WebSocket Desconectado. Reintentando...");
+                setTimeout(initWebSocket, 2000);
             };
             
             socket.onerror = function(error) {
@@ -371,8 +469,10 @@
             if (call && grid) {
                 document.getElementById('callsign').value = call;
                 document.getElementById('grid').value = grid;
-                socket.send("LOGIN:" + call + ":" + grid);
-                showApp();
+                if (socket.readyState === WebSocket.OPEN) {
+                    socket.send("LOGIN:" + call + ":" + grid);
+                    showApp();
+                }
             }
         }
 
@@ -408,13 +508,13 @@
         }
 
         function showBusyModal(masterCall) {
-            // Crear modal dinámicamente si no existe
             var modal = document.getElementById('busy-modal');
             if (!modal) {
                 modal = document.createElement('div');
                 modal.id = 'busy-modal';
+                modal.className = 'modal';
                 modal.innerHTML = `
-                    <div style="background:#111; padding:20px; border:1px solid #d00; text-align:center; max-width:300px;">
+                    <div class="modal-content">
                         <h2 style="color:#d00;">⚠️ SISTEMA EN USO</h2>
                         <p>El usuario <b>${masterCall}</b> tiene el control.</p>
                         <div style="display:flex; gap:10px; justify-content:center; margin-top:20px;">
@@ -448,6 +548,34 @@
             // Deshabilitar botones del footer
             var footerBtns = document.querySelectorAll('#footer-controls button');
             footerBtns.forEach(btn => btn.disabled = true);
+            // Deshabilitar config
+            var sidebarBtns = document.querySelectorAll('.sidebar-btn');
+            sidebarBtns.forEach(btn => btn.disabled = true);
+        }
+
+        // --- Sidebar Logic ---
+        function toggleSidebar() {
+            var sidebar = document.getElementById('sidebar');
+            sidebar.classList.toggle('open');
+        }
+
+        // --- Settings Logic ---
+        function openSettings() {
+            if (isSpectator) return;
+            // Pedir valor actual
+            socket.send("GET_FREQ");
+            document.getElementById('settings-modal').classList.remove('hidden');
+            toggleSidebar(); // Cerrar sidebar
+        }
+
+        function closeSettings() {
+            document.getElementById('settings-modal').classList.add('hidden');
+        }
+
+        function saveSettings() {
+            var freq = document.getElementById('tx-freq-input').value;
+            socket.send("SET_FREQ:" + freq);
+            closeSettings();
         }
 
         // --- Waterfall Logic ---
@@ -500,9 +628,8 @@
 
         function sendCQ() {
             if (isSpectator) return;
-            if (confirm("¿Transmitir CQ ahora? (Esto generará audio)")) {
-                socket.send("TX_CQ");
-            }
+            socket.send("TX_CQ");
+            logToUI("⏳ Solicitud TX enviada. Esperando slot...");
         }
 
         async function runFullTestSequence() {

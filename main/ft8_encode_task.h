@@ -11,6 +11,18 @@
 void ft8_tx_init(void);
 
 /**
+ * @brief Configura la frecuencia base de transmisión.
+ * @param freq Frecuencia en Hz (ej. 1000, 1500, 2000).
+ */
+void ft8_set_tx_freq(uint16_t freq);
+
+/**
+ * @brief Obtiene la frecuencia base de transmisión actual.
+ * @return Frecuencia en Hz.
+ */
+uint16_t ft8_get_tx_freq(void);
+
+/**
  * @brief Solicita la transmisión de un mensaje CQ.
  * 
  * @param callsign Callsign del emisor (ej. LU7AA)

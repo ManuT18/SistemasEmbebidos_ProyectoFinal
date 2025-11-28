@@ -17,3 +17,15 @@ sdkconfig.old
 # ESP-IDF specific
 sdkconfig.ci
 idfdata
+
+# OS Specific
+.DS_Store
+Thumbs.db
+
+# Python
+__pycache__/
+*.pyc
+
+# Compilation Database
+compile_commands.json
+.ccls-cache
