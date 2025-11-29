@@ -289,8 +289,28 @@ static esp_err_t echo_handler(httpd_req_t *req)
                 }
             }
 
+        } else if (strcmp(payload, "PING") == 0) {
+            // Echo para medir latencia (RTT)
+            httpd_ws_frame_t resp;
+            memset(&resp, 0, sizeof(httpd_ws_frame_t));
+            resp.payload = (uint8_t*)"PONG";
+            resp.len = 4;
+            resp.type = HTTPD_WS_TYPE_TEXT;
+            httpd_ws_send_frame(req, &resp);
+
+        } else if (strncmp(payload, "SYNC_TIME_MS:", 13) == 0) {
+            // Sincronización precisa con milisegundos
+            long long timestamp_ms = atoll(payload + 13);
+            if (timestamp_ms > 0) {
+                struct timeval tv;
+                tv.tv_sec = timestamp_ms / 1000;
+                tv.tv_usec = (timestamp_ms % 1000) * 1000;
+                settimeofday(&tv, NULL);
+                ESP_LOGI(TAG, "Hora sincronizada (MS): %lld", timestamp_ms);
+            }
+
         } else if (strncmp(payload, "SYNC_TIME:", 10) == 0) {
-            // Permitido a todos
+            // Permitido a todos (Legacy)
             long timestamp = atol(payload + 10);
             if (timestamp > 0) {
                 struct timeval tv;

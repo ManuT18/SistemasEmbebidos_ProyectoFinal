@@ -1,47 +1,42 @@
 /**
  * @file audio_driver.c
- * @brief Implementación del Driver de Audio usando I2S.
+ * @brief Implementación del Driver de Audio usando I2S (TX) y ADC OneShot (RX).
  * 
- * Utiliza el periférico I2S del ESP32 en modo ADC/DAC built-in.
- * Nota: El ADC built-in tiene limitaciones de linealidad y ruido, pero es suficiente para pruebas básicas.
- * 
- * CAMBIO IMPORTANTE:
- * El hardware (ADC/DAC DMA) del ESP32 a veces no soporta frecuencias tan bajas como 12000 Hz
- * debido a límites en los divisores de reloj.
- * Solución: Configuramos el HW a 24000 Hz y hacemos resampling (2x) por software.
+ * SOLUCIÓN AL CONFLICTO I2S:
+ * El ESP32 comparte I2S0 para ADC y DAC continuos. Esto causa crashes al alternar.
+ * Solución: Usar ADC OneShot (ADC1) para RX y DAC Continuous (I2S0) para TX.
+ * Al usar unidades diferentes (ADC1 vs I2S0/ADC2), evitamos conflictos de hardware.
  */
 
 #include "audio_driver.h"
 #include "esp_log.h"
 #include "esp_check.h"
-#include "esp_adc/adc_continuous.h"
+#include "esp_adc/adc_oneshot.h"
 #include "driver/dac_continuous.h"
 #include "driver/gpio.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include "esp_timer.h"
 #include <string.h>
 
 static const char *TAG = "AUDIO_DRIVER";
 
-// Frecuencia real del Hardware (2x la requerida por FT8)
-#define HW_SAMPLE_RATE      (AUDIO_SAMPLE_RATE * 2) // 24000 Hz
+// Frecuencia real del Hardware DAC (2x la requerida por FT8 para oversampling)
+#define HW_DAC_SAMPLE_RATE      (AUDIO_SAMPLE_RATE * 2) // 24000 Hz
 
-// --- Configuración ADC (RX) ---
+// --- Configuración ADC (RX - OneShot) ---
 #define ADC_UNIT            ADC_UNIT_1
 #define ADC_CHANNEL         ADC_CHANNEL_6 // GPIO34 en ESP32
-#define ADC_CONV_MODE       ADC_CONV_SINGLE_UNIT_1
-#define ADC_OUTPUT_TYPE     ADC_DIGI_OUTPUT_FORMAT_TYPE1
-#define ADC_ATTEN           ADC_ATTEN_DB_12 // 11dB o 12dB para rango completo
+#define ADC_ATTEN           ADC_ATTEN_DB_12
 
-static adc_continuous_handle_t adc_handle = NULL;
+static adc_oneshot_unit_handle_t adc_handle = NULL;
 
-// --- Configuración DAC (TX) ---
+// --- Configuración DAC (TX - Continuous) ---
 #define DAC_CHAN            DAC_CHAN_0 // GPIO25
 static dac_continuous_handle_t dac_handle = NULL;
 
-// Mutex para proteger el acceso a los handles y evitar condiciones de carrera
+// Mutex para proteger el acceso
 static SemaphoreHandle_t audio_mutex = NULL;
-static bool adc_running = false;
 static bool dac_running = false;
 
 // Sincronización RX
@@ -53,41 +48,30 @@ static SemaphoreHandle_t rx_running_sem = NULL;
 static esp_err_t create_adc_handle(void) {
     if (adc_handle) return ESP_OK;
 
-    ESP_LOGI(TAG, "Creando handle ADC...");
-    adc_continuous_handle_cfg_t adc_config = {
-        .max_store_buf_size = AUDIO_BUFFER_SIZE * 8,
-        .conv_frame_size = AUDIO_BUFFER_SIZE * 2,
+    ESP_LOGI(TAG, "Creando handle ADC OneShot (ADC1)...");
+    adc_oneshot_unit_init_cfg_t init_config = {
+        .unit_id = ADC_UNIT,
     };
-    ESP_RETURN_ON_ERROR(adc_continuous_new_handle(&adc_config, &adc_handle), TAG, "Error creando handle ADC");
+    ESP_RETURN_ON_ERROR(adc_oneshot_new_unit(&init_config, &adc_handle), TAG, "Error creando ADC unit");
 
-    adc_continuous_config_t dig_cfg = {
-        .sample_freq_hz = HW_SAMPLE_RATE,
-        .conv_mode = ADC_CONV_MODE,
-        .format = ADC_OUTPUT_TYPE,
+    adc_oneshot_chan_cfg_t config = {
+        .bitwidth = ADC_BITWIDTH_DEFAULT,
+        .atten = ADC_ATTEN,
     };
-    
-    adc_digi_pattern_config_t adc_pattern[1] = {0};
-    adc_pattern[0].atten = ADC_ATTEN;
-    adc_pattern[0].channel = ADC_CHANNEL;
-    adc_pattern[0].unit = ADC_UNIT;
-    adc_pattern[0].bit_width = SOC_ADC_DIGI_MAX_BITWIDTH;
+    ESP_RETURN_ON_ERROR(adc_oneshot_config_channel(adc_handle, ADC_CHANNEL, &config), TAG, "Error configurando canal ADC");
 
-    dig_cfg.pattern_num = 1;
-    dig_cfg.adc_pattern = adc_pattern;
-
-    ESP_RETURN_ON_ERROR(adc_continuous_config(adc_handle, &dig_cfg), TAG, "Error configurando ADC");
     return ESP_OK;
 }
 
 static esp_err_t create_dac_handle(void) {
     if (dac_handle) return ESP_OK;
 
-    ESP_LOGI(TAG, "Creando handle DAC...");
+    ESP_LOGI(TAG, "Creando handle DAC Continuous...");
     dac_continuous_config_t dac_cfg = {
         .chan_mask = DAC_CHANNEL_MASK_CH0,
         .desc_num = 4,
         .buf_size = AUDIO_BUFFER_SIZE * 2,
-        .freq_hz = HW_SAMPLE_RATE,
+        .freq_hz = HW_DAC_SAMPLE_RATE,
         .offset = 0,
         .clk_src = DAC_DIGI_CLK_SRC_DEFAULT,
         .chan_mode = DAC_CHANNEL_MODE_SIMUL,
@@ -101,7 +85,6 @@ static esp_err_t create_dac_handle(void) {
 
 void audio_pause_rx(void) {
     rx_paused = true;
-    // Esperar a que termine cualquier lectura en curso usando el semáforo
     if (rx_running_sem) {
         xSemaphoreTake(rx_running_sem, portMAX_DELAY);
         xSemaphoreGive(rx_running_sem);
@@ -114,7 +97,7 @@ void audio_resume_rx(void) {
 
 esp_err_t audio_driver_init(void)
 {
-    ESP_LOGI(TAG, "Inicializando Audio Driver (Handles Persistentes)...");
+    ESP_LOGI(TAG, "Inicializando Audio Driver (Hybrid Mode)...");
     
     if (audio_mutex == NULL) {
         audio_mutex = xSemaphoreCreateMutex();
@@ -123,21 +106,59 @@ esp_err_t audio_driver_init(void)
         rx_running_sem = xSemaphoreCreateMutex();
     }
 
-    // Crear ambos handles al inicio
+    // Crear AMBOS handles al inicio. Ahora pueden coexistir.
     ESP_RETURN_ON_ERROR(create_adc_handle(), TAG, "Fallo al crear ADC handle");
-    
-    // Intentar crear DAC handle. Si falla por conflicto, lo logueamos pero seguimos (se intentará en TX)
-    esp_err_t ret = create_dac_handle();
-    if (ret != ESP_OK) {
-        ESP_LOGW(TAG, "No se pudo crear DAC handle al inicio (posible conflicto HW): %d", ret);
-        // No retornamos error fatal, quizás funcione alternándolos
+    ESP_RETURN_ON_ERROR(create_dac_handle(), TAG, "Fallo al crear DAC handle");
+
+    return ESP_OK;
+}
+
+esp_err_t audio_read(int16_t *buffer, size_t length, size_t *bytes_read)
+{
+    if (rx_paused) {
+        vTaskDelay(pdMS_TO_TICKS(100));
+        if (bytes_read) *bytes_read = 0;
+        return ESP_OK;
     }
 
-    // Iniciar ADC (Modo RX por defecto)
-    ESP_LOGI(TAG, "Iniciando ADC...");
-    ESP_RETURN_ON_ERROR(adc_continuous_start(adc_handle), TAG, "Error iniciando ADC");
-    adc_running = true;
+    if (rx_running_sem) xSemaphoreTake(rx_running_sem, portMAX_DELAY);
 
+    if (!adc_handle) {
+        if (rx_running_sem) xSemaphoreGive(rx_running_sem);
+        return ESP_FAIL;
+    }
+
+    // Lectura temporizada por software para 12000 Hz
+    // Periodo = 1000000 / 12000 = 83.33 us
+    const int64_t period_us = 83; 
+    int64_t next_time = esp_timer_get_time();
+    int samples_read = 0;
+    int val = 0;
+
+    for (size_t i = 0; i < length; i++) {
+        // Esperar al siguiente instante de muestreo
+        while (esp_timer_get_time() < next_time) {
+            // Busy wait para precisión (o yield si sobra mucho tiempo)
+            // Para 83us, busy wait es mejor para evitar jitter de scheduler
+        }
+        
+        // Leer ADC
+        if (adc_oneshot_read(adc_handle, ADC_CHANNEL, &val) == ESP_OK) {
+            // Convertir 12-bit (0-4095) a int16 centrado en 0?
+            // FT8 lib espera int16. Si es raw, el decode task lo normaliza.
+            // Aquí devolvemos raw 0-4095 en el int16.
+            buffer[i] = (int16_t)val;
+            samples_read++;
+        } else {
+            buffer[i] = 2048; // Valor medio por defecto en error
+        }
+
+        next_time += period_us;
+    }
+
+    if (rx_running_sem) xSemaphoreGive(rx_running_sem);
+    
+    if (bytes_read) *bytes_read = samples_read * sizeof(int16_t);
     return ESP_OK;
 }
 
@@ -146,13 +167,12 @@ esp_err_t audio_write(const int16_t *buffer, size_t length, size_t *bytes_writte
     if (audio_mutex) xSemaphoreTake(audio_mutex, portMAX_DELAY);
 
     if (!dac_handle) {
-        ESP_LOGE(TAG, "DAC Handle es NULL (TX no iniciada)");
+        ESP_LOGE(TAG, "DAC Handle es NULL");
         if (audio_mutex) xSemaphoreGive(audio_mutex);
         return ESP_ERR_INVALID_STATE;
     }
     
     size_t samples_processed = 0;
-    // Buffer temporal para escritura HW
     #define CHUNK_SIZE 256
     uint8_t tmp_buf[CHUNK_SIZE * 2]; 
     
@@ -181,8 +201,6 @@ esp_err_t audio_write(const int16_t *buffer, size_t length, size_t *bytes_writte
         }
         
         samples_processed += chunk_samples;
-        
-        // Yield para evitar watchdog
         vTaskDelay(1);
     }
     
@@ -197,27 +215,20 @@ esp_err_t audio_write(const int16_t *buffer, size_t length, size_t *bytes_writte
 
 esp_err_t audio_tx_start(void)
 {
-    ESP_LOGI(TAG, ">>> Cambiando a MODO TX (Stop ADC -> Start DAC) <<<");
+    ESP_LOGI(TAG, ">>> Cambiando a MODO TX (Enable DAC) <<<");
     
-    audio_pause_rx(); // Sincronización con semáforo
+    audio_pause_rx(); 
 
     if (audio_mutex) xSemaphoreTake(audio_mutex, portMAX_DELAY);
 
-    // 1. Detener ADC
-    if (adc_running && adc_handle) {
-        adc_continuous_stop(adc_handle);
-        adc_running = false;
-    }
-
-    // Pequeño delay para que el HW cambie de estado
-    vTaskDelay(pdMS_TO_TICKS(50));
-
-    // 2. Asegurar DAC handle
+    // Solo habilitar DAC. ADC OneShot no necesita "pararse" (solo dejamos de llamar a read)
+    
+    // Lazy Init: Si por alguna razón el handle no existe (fallo en init?), crearlo ahora.
     if (!dac_handle) {
+        ESP_LOGW(TAG, "DAC Handle no existe en TX Start, intentando crear...");
         create_dac_handle();
     }
 
-    // 3. Habilitar DAC
     if (dac_handle) {
         esp_err_t ret = dac_continuous_enable(dac_handle);
         if (ret == ESP_OK) {
@@ -228,7 +239,7 @@ esp_err_t audio_tx_start(void)
             return ret;
         }
     } else {
-        ESP_LOGE(TAG, "No hay DAC handle disponible");
+        ESP_LOGE(TAG, "No se pudo crear DAC Handle");
         if (audio_mutex) xSemaphoreGive(audio_mutex);
         return ESP_FAIL;
     }
@@ -239,32 +250,12 @@ esp_err_t audio_tx_start(void)
 
 esp_err_t audio_tx_stop(void)
 {
-    ESP_LOGI(TAG, ">>> Cambiando a MODO RX (Stop DAC -> Start ADC) <<<");
+    ESP_LOGI(TAG, ">>> Cambiando a MODO RX (Disable DAC) <<<");
     if (audio_mutex) xSemaphoreTake(audio_mutex, portMAX_DELAY);
 
-    // 1. Deshabilitar DAC
     if (dac_running && dac_handle) {
         dac_continuous_disable(dac_handle);
         dac_running = false;
-    }
-
-    // Pequeño delay
-    vTaskDelay(pdMS_TO_TICKS(50));
-
-    // 2. Iniciar ADC
-    if (adc_handle) {
-        esp_err_t ret = adc_continuous_start(adc_handle);
-        if (ret == ESP_OK) {
-            adc_running = true;
-        } else {
-            ESP_LOGE(TAG, "Error iniciando ADC: %d", ret);
-            if (audio_mutex) xSemaphoreGive(audio_mutex);
-            return ret;
-        }
-    } else {
-        ESP_LOGE(TAG, "No hay ADC handle disponible");
-        if (audio_mutex) xSemaphoreGive(audio_mutex);
-        return ESP_FAIL;
     }
     
     if (audio_mutex) xSemaphoreGive(audio_mutex);

@@ -28,11 +28,11 @@
             border-right: 1px solid #333;
             transition: left 0.3s ease;
             z-index: 2000;
-            padding-top: 60px; 
+            padding-top: 80px; 
             display: flex;
             flex-direction: column;
             align-items: center;
-            gap: 20px;
+            gap: 30px;
             overflow-y: auto; /* Permitir scroll si es necesario */
         }
         #sidebar.open {
@@ -91,7 +91,6 @@
             background: #d00;
             color: white;
             border: none;
-            margin-bottom: 20px;
         }
 
         /* Titles */
@@ -355,6 +354,18 @@
                 <input type="number" id="tx-freq-input" class="modal-input" min="100" max="3000" value="1000">
             </div>
 
+            <div style="margin: 20px 0;">
+                <label>Offset Tiempo (seg):</label><br>
+                <div style="display: flex; align-items: center; justify-content: center; gap: 15px; margin-top: 10px;">
+                    <button class="action-btn" style="padding: 5px 15px; width: auto;" onclick="adjustOffset(-0.1)">-</button>
+                    <span id="offset-display" style="font-size: 1.5em; font-weight: bold; width: 80px; color: #fff;">0.0</span>
+                    <button class="action-btn" style="padding: 5px 15px; width: auto;" onclick="adjustOffset(0.1)">+</button>
+                </div>
+                <small style="color:#888;">(+ adelanta, - atrasa)</small>
+            </div>
+
+
+
             <div style="display: flex; gap: 10px; justify-content: center;">
                 <button class="action-btn" onclick="saveSettings()">GUARDAR</button>
                 <button class="action-btn" style="background: #d00; color: #fff;" onclick="closeSettings()">CANCELAR</button>
@@ -384,6 +395,7 @@
                 </div>
             </div>
 
+            <button class="sidebar-btn" onclick="syncTime(); alert('Hora sincronizada');">🔄 SINCRONIZAR HORA</button>
             <button class="sidebar-btn" onclick="openSettings()">⚙️ CONFIGURACIÓN</button>
         </div>
 
@@ -424,6 +436,7 @@
             
             socket.onopen = function() {
                 console.log("WebSocket Conectado");
+                syncTime(); // Sincronizar hora al conectar
                 checkLogin();
             };
             
@@ -436,6 +449,17 @@
                     } else if (msg.startsWith("FREQ:")) {
                         var freq = msg.split(":")[1];
                         document.getElementById('tx-freq-input').value = freq;
+                    } else if (msg === "PONG") {
+                        var rtt = Date.now() - pingStart;
+                        var latency = Math.floor(rtt / 2);
+                        var now = Date.now();
+                        
+                        // Hora corregida = Hora Sistema + Latencia Red + Offset Manual (segundos -> ms)
+                        var offsetMs = clockOffset * 1000;
+                        var compensatedTime = now + latency + offsetMs;
+                        
+                        socket.send("SYNC_TIME_MS:" + compensatedTime);
+                        console.log("Sincronización: RTT=" + rtt + "ms, Latencia=" + latency + "ms, Offset=" + offsetMs + "ms");
                     } else {
                         logToUI(msg);
                     }
@@ -461,6 +485,9 @@
 
         // Iniciar conexión al cargar
         initWebSocket();
+        
+        // Sincronización periódica para corregir deriva del reloj (cada 30 seg)
+        setInterval(syncTime, 30000);
 
         // --- Login Logic ---
         function checkLogin() {
@@ -560,10 +587,21 @@
         }
 
         // --- Settings Logic ---
+        function adjustOffset(delta) {
+            var display = document.getElementById('offset-display');
+            var current = parseFloat(display.innerText);
+            var newVal = current + delta;
+            display.innerText = newVal.toFixed(1);
+        }
+
         function openSettings() {
             if (isSpectator) return;
             // Pedir valor actual
             socket.send("GET_FREQ");
+            
+            // Cargar offset actual
+            document.getElementById('offset-display').innerText = clockOffset.toFixed(1);
+            
             document.getElementById('settings-modal').classList.remove('hidden');
             toggleSidebar(); // Cerrar sidebar
         }
@@ -575,6 +613,15 @@
         function saveSettings() {
             var freq = document.getElementById('tx-freq-input').value;
             socket.send("SET_FREQ:" + freq);
+            
+            // Guardar Offset
+            var offsetVal = document.getElementById('offset-display').innerText;
+            clockOffset = parseFloat(offsetVal);
+            localStorage.setItem('clockOffset', clockOffset);
+            
+            logToUI("⚙️ Configuración guardada. Offset: " + clockOffset + "s");
+            syncTime(); // Aplicar nuevo offset inmediatamente
+            
             closeSettings();
         }
 
@@ -681,15 +728,21 @@
             }
         }
 
+        var pingStart = 0;
+        var clockOffset = parseFloat(localStorage.getItem('clockOffset')) || 0; 
+
         function syncTime() {
-             var now = Math.floor(Date.now() / 1000);
              if (socket.readyState === WebSocket.OPEN) {
-                socket.send('SYNC_TIME:' + now);
+                pingStart = Date.now();
+                socket.send('PING');
              }
         }
 
         function updateClock() {
             var now = new Date();
+            // Aplicar offset visualmente solo para referencia (opcional, pero ayuda a ver qué hora tiene el sistema)
+            // Ojo: El reloj de JS muestra la hora del sistema. El offset se aplica al ENVIAR al ESP32.
+            
             var hours = String(now.getUTCHours()).padStart(2, '0');
             var minutes = String(now.getUTCMinutes()).padStart(2, '0');
             var seconds = String(now.getUTCSeconds()).padStart(2, '0');
@@ -697,7 +750,7 @@
             
             var timeStr = hours + ":" + minutes + ":" + seconds + "." + millis;
             
-            document.getElementById('clock-display').innerText = "HORA ACTUAL (UTC): " + timeStr;
+            document.getElementById('clock-display').innerText = "HORA ACTUAL (UTC): " + timeStr + " (Offset: " + clockOffset + "s)";
             
             var sleepClock = document.getElementById('sleep-clock');
             if (sleepClock) {

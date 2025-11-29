@@ -57,21 +57,35 @@ static void ft8_tx_task(void *arg)
     // --- Sincronización con Slot de Tiempo (00, 15, 30, 45) ---
     struct timeval tv;
     gettimeofday(&tv, NULL);
-    struct tm *timeinfo = localtime(&tv.tv_sec);
-    int sec = timeinfo->tm_sec;
-    int next_slot = ((sec / 15) + 1) * 15;
-    int wait_sec = next_slot - sec;
     
-    // Si falta menos de 1 segundo, saltamos al siguiente slot para asegurar inicio limpio
-    if (wait_sec < 1) wait_sec += 15; 
+    int64_t now_us = (int64_t)tv.tv_sec * 1000000LL + tv.tv_usec;
+    int64_t next_slot_sec = ((tv.tv_sec / 15) + 1) * 15;
+    int64_t next_slot_us = next_slot_sec * 1000000LL;
+    
+    int64_t wait_us = next_slot_us - now_us;
+    
+    // Si falta menos de 1 segundo, saltamos al siguiente slot (15s más)
+    if (wait_us < 1000000LL) {
+        wait_us += 15000000LL;
+    }
 
-    ESP_LOGI(TAG, "Esperando %d segundos para inicio de slot TX...", wait_sec);
+    // Compensación de Overhead (Driver startup ~100-200ms)
+    // Despertamos 200ms ANTES del slot para iniciar el driver
+    int64_t overhead_comp_us = 200000LL; 
+    if (wait_us > overhead_comp_us) {
+        wait_us -= overhead_comp_us;
+    } else {
+        wait_us = 0; // Ya estamos tarde, iniciar ya
+    }
+
+    int wait_ms = (int)(wait_us / 1000);
+    ESP_LOGI(TAG, "Esperando %d ms para inicio de slot TX (con compensación)...", wait_ms);
     
     char msg_wait[64];
-    snprintf(msg_wait, sizeof(msg_wait), "⏳ TX Programada en %ds...", wait_sec);
+    snprintf(msg_wait, sizeof(msg_wait), "⏳ TX Programada en %.1fs...", wait_ms / 1000.0);
     web_interface_send_log(msg_wait);
 
-    vTaskDelay(pdMS_TO_TICKS(wait_sec * 1000));
+    vTaskDelay(pdMS_TO_TICKS(wait_ms));
 
     web_interface_send_log("📡 TX: Generando mensaje CQ...");
 
