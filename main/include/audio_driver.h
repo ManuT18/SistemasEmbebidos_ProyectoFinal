@@ -60,4 +60,9 @@ esp_err_t audio_tx_start(void);
  */
 esp_err_t audio_tx_stop(void);
 
+/**
+ * @brief Vacía el buffer de recepción del ADC.
+ */
+void audio_flush_rx(void);
+
 #endif // AUDIO_DRIVER_H

@@ -44,6 +44,10 @@ static void waterfall_init(ftx_waterfall_t* me, int max_blocks, int num_bins, in
     me->freq_osr = freq_osr;
     me->block_stride = (time_osr * freq_osr * num_bins);
     me->mag = (WF_ELEM_T*)malloc(mag_size);
+    if (me->mag == NULL) {
+        LOG(LOG_ERROR, "Failed to allocate waterfall memory (%zu bytes)\n", mag_size);
+        return;
+    }
     LOG(LOG_DEBUG, "Waterfall size = %zu\n", mag_size);
 }
 

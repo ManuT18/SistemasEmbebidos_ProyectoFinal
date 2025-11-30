@@ -46,8 +46,19 @@ static web_get_data_cb_t g_get_call_cb = NULL;
 static web_get_data_cb_t g_get_grid_cb = NULL;
 static web_test_cb_t g_test_cb = NULL;
 static web_tx_cq_cb_t g_tx_cq_cb = NULL;
+static web_tx_msg_cb_t g_tx_msg_cb = NULL;
 static web_set_freq_cb_t g_set_freq_cb = NULL;
 static web_get_freq_cb_t g_get_freq_cb = NULL;
+
+// ... (prototypes)
+
+void web_interface_set_tx_cq_callback(web_tx_cq_cb_t cb) {
+    g_tx_cq_cb = cb;
+}
+
+void web_interface_set_tx_msg_callback(web_tx_msg_cb_t cb) {
+    g_tx_msg_cb = cb;
+}
 
 // Prototipos de funciones estáticas
 static void init_clients(void);
@@ -357,6 +368,21 @@ static esp_err_t echo_handler(httpd_req_t *req)
                     web_interface_send_log("⚠️ Función TX no registrada");
                 }
             }
+        } else if (strncmp(payload, "TX_MSG:", 7) == 0) {
+            if (current_fd == g_master_fd) {
+                char *msg = payload + 7;
+                if (strlen(msg) > 0) {
+                    if (g_tx_msg_cb) {
+                        if (g_tx_msg_cb(msg)) {
+                            // web_interface_send_log("Solicitud TX MSG aceptada");
+                        } else {
+                            web_interface_send_log("⚠️ TX Ocupado o Error");
+                        }
+                    } else {
+                        web_interface_send_log("⚠️ Función TX MSG no registrada");
+                    }
+                }
+            }
         } else if (strncmp(payload, "SET_FREQ:", 9) == 0) {
             if (current_fd == g_master_fd) {
                 int freq = atoi(payload + 9);
@@ -423,7 +449,7 @@ static void start_webserver(void)
 }
 
 /* ===============================================================
-   API PÚBLICA
+   API PÚBLICA (Restaurada)
    =============================================================== */
 
 void web_interface_init(void)
@@ -459,11 +485,6 @@ void web_interface_register_data_providers(web_get_data_cb_t get_call, web_get_d
 void web_interface_set_test_callback(web_test_cb_t cb)
 {
     g_test_cb = cb;
-}
-
-void web_interface_set_tx_cq_callback(web_tx_cq_cb_t cb)
-{
-    g_tx_cq_cb = cb;
 }
 
 void web_interface_register_freq_callbacks(web_set_freq_cb_t set_freq, web_get_freq_cb_t get_freq)

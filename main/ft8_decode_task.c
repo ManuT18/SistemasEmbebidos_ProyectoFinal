@@ -30,7 +30,7 @@ static const char *TAG = "FT8_DECODE";
 
 /* --- Configuración de Modo Prueba (WAV Embebido) --- 
  * Descomentar para probar con archivos WAV embebidos en el binario */
-#define TEST_MODE_WAV 
+// #define TEST_MODE_WAV 
 
 #ifdef TEST_MODE_WAV
 /* Definición de archivos WAV embebidos en el binario */
@@ -79,7 +79,7 @@ void ft8_decode_task(void *pvParameters)
         .f_min = 200,
         .f_max = 3000,
         .sample_rate = FT8_SAMPLE_RATE,
-        .time_osr = 2, // kTime_osr en demo
+        .time_osr = 1, // Reducido a 1 para ahorrar RAM (Waterfall ~40KB)
         .freq_osr = 1, // Reducido a 1 para ahorrar RAM (Waterfall ~80KB vs ~160KB)
         .protocol = FTX_PROTOCOL_FT8
     };
@@ -99,6 +99,8 @@ void ft8_decode_task(void *pvParameters)
     }
 
     size_t __attribute__((unused)) bytes_read = 0;
+
+#ifdef TEST_MODE_WAV
     int current_file_idx = 0;
 
     /* Variables para lectura de WAV */
@@ -106,6 +108,7 @@ void ft8_decode_task(void *pvParameters)
     const uint8_t *wav_end = NULL;
     size_t wav_size = 0;
     size_t wav_pos = 0;
+#endif
 
     /* --- Máquina de Estados FT8 --- */
     typedef enum {
@@ -173,18 +176,48 @@ void ft8_decode_task(void *pvParameters)
                     vTaskDelay(pdMS_TO_TICKS(100));
                 }
 #else
-                vTaskDelay(pdMS_TO_TICKS(100));
+                // Sincronización en Modo Live (Microfono)
+                struct timeval tv;
+                gettimeofday(&tv, NULL);
+                struct tm *timeinfo = localtime(&tv.tv_sec);
+                int sec = timeinfo->tm_sec;
+                int next_slot = ((sec / 15) + 1) * 15;
+                int wait_sec = next_slot - sec;
+                
+                // Si falta menos de 1 segundo, esperar al siguiente ciclo para asegurar
+                if (wait_sec < 1) wait_sec += 15;
+
+                ESP_LOGI(TAG, "Sincronizando... Esperando %d segundos (Inicio: %02d:%02d:%02d)", 
+                         wait_sec, timeinfo->tm_hour, timeinfo->tm_min, timeinfo->tm_sec);
+                
+                // Enviar estado a web
+                char msg_wait[64];
+                snprintf(msg_wait, sizeof(msg_wait), "⏳ Sincronizando (%ds)...", wait_sec);
+                web_interface_send_log(msg_wait);
+
+                // Esperar hasta el slot
+                vTaskDelay(pdMS_TO_TICKS(wait_sec * 1000));
+                
+                // IMPORTANTE: Vaciar buffer de audio viejo antes de empezar
+                audio_flush_rx();
+
+                // Loguear inicio real
+                gettimeofday(&tv, NULL);
+                timeinfo = localtime(&tv.tv_sec);
+                ESP_LOGI(TAG, "Inicio Ciclo Live: %02d:%02d:%02d", timeinfo->tm_hour, timeinfo->tm_min, timeinfo->tm_sec);
+                web_interface_send_log("▶️ Escuchando...");
+
                 monitor_reset(&mon);
                 current_state = FT8_STATE_RX;
 #endif
                 break;
 
             case FT8_STATE_RX:
-                // Procesar audio hasta llenar el waterfall
-                if (mon.wf.num_blocks >= mon.wf.max_blocks) {
+                // Procesar audio hasta llenar el waterfall o llegar al límite de tiempo
+                // Limitar a 85 bloques (~13.6s) para dar tiempo a decodificar y sincronizar
+                if (mon.wf.num_blocks >= 85) {
                     // Enviar Waterfall a la Web
                     size_t wf_size = mon.wf.num_blocks * mon.wf.block_stride;
-                    // ESP_LOGI(TAG, "Enviando Waterfall (%d bytes)...", wf_size);
                     web_interface_send_binary(mon.wf.mag, wf_size);
 
                     current_state = FT8_STATE_DECODE;
@@ -197,26 +230,23 @@ void ft8_decode_task(void *pvParameters)
 #ifdef TEST_MODE_WAV
                 if (wav_pos + bytes_to_read > wav_size) {
                     memset(pcm_buf, 0, bytes_to_read);
-                    // Si se acaba el archivo antes de llenar el waterfall, pasamos a decodificar igual
-                    // o rellenamos con silencio. Aquí rellenamos con silencio.
                 } else {
                     memcpy(pcm_buf, wav_start + wav_pos, bytes_to_read);
                     wav_pos += bytes_to_read;
 
                     // Simular tiempo real de audio
-                    // block_size muestras / 12000 Hz = segundos
-                    // REDUCIDO A LA MITAD para compensar overhead de procesamiento y asegurar
-                    // que el ciclo total (Audio + Decodificación) entre en los 15s del slot FT8.
-                    // Si nos pasamos de 15s, perdemos el siguiente slot.
                     uint32_t delay_ms = ((mon.block_size * 1000) / FT8_SAMPLE_RATE) / 2;
-                    if (delay_ms < 2) delay_ms = 2; // Mínimo para dar aire al RTOS
+                    if (delay_ms < 2) delay_ms = 2; 
                     vTaskDelay(pdMS_TO_TICKS(delay_ms));
                 }
                 // Yield para evitar WDT en bucles largos
                 if (mon.wf.num_blocks % 5 == 0) vTaskDelay(pdMS_TO_TICKS(1));
 #else
-                if (audio_read(pcm_buf, mon.block_size, &bytes_read) != ESP_OK) {
+                size_t read_len = 0;
+                if (audio_read(pcm_buf, mon.block_size, &read_len) != ESP_OK || read_len == 0) {
+                    // Si hay error o no se leyó nada (pausa), rellenar con silencio y esperar
                     memset(pcm_buf, 0, bytes_to_read);
+                    vTaskDelay(pdMS_TO_TICKS(100)); // Evitar spin loop si está pausado
                 }
 #endif
 
@@ -227,7 +257,8 @@ void ft8_decode_task(void *pvParameters)
                     float_buf[i] = (float)pcm_buf[i] / 32768.0f;
 #else
                     // Centrar y normalizar ADC (0-4095 -> -1.0 a 1.0)
-                    float_buf[i] = ((float)pcm_buf[i] - 2048.0f) / 2048.0f;
+                    // Ganancia por software x5.0 para mejorar visualización
+                    float_buf[i] = (((float)pcm_buf[i] - 2048.0f) / 2048.0f) * 5.0f;
 #endif
                 }
                 

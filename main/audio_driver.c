@@ -11,54 +11,58 @@
 #include "audio_driver.h"
 #include "esp_log.h"
 #include "esp_check.h"
-#include "esp_adc/adc_oneshot.h"
 #include "driver/dac_continuous.h"
-#include "driver/gpio.h"
+#include "esp_adc/adc_oneshot.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "freertos/semphr.h"
+#include "freertos/ringbuf.h"
 #include "esp_timer.h"
 #include <string.h>
+#include <math.h>
 
 static const char *TAG = "AUDIO_DRIVER";
 
-// Frecuencia real del Hardware DAC (2x la requerida por FT8 para oversampling)
-#define HW_DAC_SAMPLE_RATE      (AUDIO_SAMPLE_RATE * 2) // 24000 Hz
-
-// --- Configuración ADC (RX - OneShot) ---
+// Configuración ADC (RX) - OneShot
 #define ADC_UNIT            ADC_UNIT_1
-#define ADC_CHANNEL         ADC_CHANNEL_6 // GPIO34 en ESP32
+#define ADC_CHANNEL         ADC_CHANNEL_6 // GPIO 34
 #define ADC_ATTEN           ADC_ATTEN_DB_12
 
+// Configuración DAC (TX) - Continuous
+#define DAC_CHAN            DAC_CHAN_0 // GPIO 25
+#define AUDIO_SAMPLE_RATE   12000
+#define HW_DAC_SAMPLE_RATE  24000 // Upsampling 2x para DAC
+
+// Handles
 static adc_oneshot_unit_handle_t adc_handle = NULL;
-
-// --- Configuración DAC (TX - Continuous) ---
-#define DAC_CHAN            DAC_CHAN_0 // GPIO25
 static dac_continuous_handle_t dac_handle = NULL;
-
-// Mutex para proteger el acceso
 static SemaphoreHandle_t audio_mutex = NULL;
+static SemaphoreHandle_t rx_running_sem = NULL; // Mutex para pausar RX
 static bool dac_running = false;
 
-// Sincronización RX
-static volatile bool rx_paused = false;
-static SemaphoreHandle_t rx_running_sem = NULL;
+// Ring Buffer para desacoplar captura de procesamiento
+static RingbufHandle_t adc_ringbuf = NULL;
+static TaskHandle_t capture_task_handle = NULL;
+static volatile bool capture_running = false;
 
-// --- Funciones Helper Privadas ---
+// Buffer interno para la tarea de captura
+#define CAPTURE_BUFFER_SIZE 128 // Pequeño buffer para agrupar escrituras en RingBuf
 
 static esp_err_t create_adc_handle(void) {
     if (adc_handle) return ESP_OK;
 
-    ESP_LOGI(TAG, "Creando handle ADC OneShot (ADC1)...");
+    ESP_LOGI(TAG, "Creando handle ADC OneShot...");
     adc_oneshot_unit_init_cfg_t init_config = {
         .unit_id = ADC_UNIT,
+        .clk_src = ADC_DIGI_CLK_SRC_DEFAULT,
     };
-    ESP_RETURN_ON_ERROR(adc_oneshot_new_unit(&init_config, &adc_handle), TAG, "Error creando ADC unit");
+    ESP_RETURN_ON_ERROR(adc_oneshot_new_unit(&init_config, &adc_handle), TAG, "Error init ADC unit");
 
     adc_oneshot_chan_cfg_t config = {
-        .bitwidth = ADC_BITWIDTH_DEFAULT,
+        .bitwidth = ADC_BITWIDTH_12,
         .atten = ADC_ATTEN,
     };
-    ESP_RETURN_ON_ERROR(adc_oneshot_config_channel(adc_handle, ADC_CHANNEL, &config), TAG, "Error configurando canal ADC");
+    ESP_RETURN_ON_ERROR(adc_oneshot_config_channel(adc_handle, ADC_CHANNEL, &config), TAG, "Error config ADC channel");
 
     return ESP_OK;
 }
@@ -70,8 +74,8 @@ static esp_err_t create_dac_handle(void) {
     dac_continuous_config_t dac_cfg = {
         .chan_mask = DAC_CHANNEL_MASK_CH0,
         .desc_num = 4,
-        .buf_size = AUDIO_BUFFER_SIZE * 2,
-        .freq_hz = HW_DAC_SAMPLE_RATE,
+        .buf_size = 2048, 
+        .freq_hz = HW_DAC_SAMPLE_RATE, 
         .offset = 0,
         .clk_src = DAC_DIGI_CLK_SRC_DEFAULT,
         .chan_mode = DAC_CHANNEL_MODE_SIMUL,
@@ -81,10 +85,96 @@ static esp_err_t create_dac_handle(void) {
     return ESP_OK;
 }
 
-// --- Implementación Pública ---
+#include "esp_task_wdt.h"
+
+// ... (existing includes)
+
+// ... (existing code)
+
+// Tarea de Captura de Audio (Alta Prioridad)
+static void adc_capture_task(void *arg) {
+    ESP_LOGI(TAG, "Tarea de Captura ADC iniciada");
+    
+    // Registrar tarea en WDT
+    esp_task_wdt_add(NULL);
+
+    const double period_us = 83.333333; // 12000 Hz
+    double next_time = (double)esp_timer_get_time();
+    
+    int16_t sample_batch[CAPTURE_BUFFER_SIZE];
+    int batch_idx = 0;
+
+    // Debug VU Meter
+    int min_val = 4096;
+    int max_val = 0;
+    int samples_counted = 0;
+
+    ESP_LOGI(TAG, " AUDIO DRIVER ################# Tarea de Captura ADC: Entrando al bucle infinito");
+    
+    int yield_counter = 0;
+
+    while (1) {
+        // Reset WDT de esta tarea
+        esp_task_wdt_reset();
+
+        if (!capture_running) {
+            vTaskDelay(pdMS_TO_TICKS(100));
+            next_time = (double)esp_timer_get_time(); 
+            continue;
+        }
+
+        // Espera precisa
+        while (esp_timer_get_time() < (int64_t)next_time) {
+            __asm__ __volatile__("nop");
+        }
+
+        // Leer ADC
+        int val = 0;
+        if (adc_handle) {
+            if (adc_oneshot_read(adc_handle, ADC_CHANNEL, &val) == ESP_OK) {
+                sample_batch[batch_idx++] = (int16_t)val;
+                
+                // VU Meter Logic
+                if (val < min_val) min_val = val;
+                if (val > max_val) max_val = val;
+            } else {
+                sample_batch[batch_idx++] = 2048;
+            }
+        }
+
+        next_time += period_us;
+        samples_counted++;
+        yield_counter++;
+
+        // Enviar al Ring Buffer
+        if (batch_idx >= CAPTURE_BUFFER_SIZE) {
+            if (adc_ringbuf) {
+                xRingbufferSend(adc_ringbuf, sample_batch, sizeof(sample_batch), 0); 
+            }
+            batch_idx = 0;
+            taskYIELD();
+        }
+        
+        // Log cada ~1 segundo
+        if (samples_counted >= 12000) {
+            printf("ADC Signal: Min=%d, Max=%d, Delta=%d (Center ~2048)\n", min_val, max_val, max_val - min_val);
+            samples_counted = 0;
+            min_val = 4096;
+            max_val = 0;
+        }
+
+        // CRÍTICO: Ceder control al IDLE task cada ~2.5 segundos para evitar WDT Reset
+        // 30000 muestras * 83us = ~2.5s
+        if (yield_counter >= 30000) {
+            vTaskDelay(1); // Esperar 1 tick (10ms)
+            yield_counter = 0;
+            // Compensar el tiempo perdido para no intentar "recuperar" el pasado de golpe
+            next_time = (double)esp_timer_get_time(); 
+        }
+    }
+}
 
 void audio_pause_rx(void) {
-    rx_paused = true;
     if (rx_running_sem) {
         xSemaphoreTake(rx_running_sem, portMAX_DELAY);
         xSemaphoreGive(rx_running_sem);
@@ -92,73 +182,82 @@ void audio_pause_rx(void) {
 }
 
 void audio_resume_rx(void) {
-    rx_paused = false;
+    // No-op en este diseño, controlado por capture_running
+}
+
+void audio_flush_rx(void) {
+    if (adc_ringbuf) {
+        // Leer y descartar todo lo que haya en el buffer
+        size_t item_size;
+        void *item;
+        while ((item = xRingbufferReceive(adc_ringbuf, &item_size, 0)) != NULL) {
+            vRingbufferReturnItem(adc_ringbuf, item);
+        }
+    }
 }
 
 esp_err_t audio_driver_init(void)
 {
-    ESP_LOGI(TAG, "Inicializando Audio Driver (Hybrid Mode)...");
+    ESP_LOGI(TAG, "Inicializando Audio Driver (Hybrid + RingBuf)...");
     
-    if (audio_mutex == NULL) {
-        audio_mutex = xSemaphoreCreateMutex();
-    }
-    if (rx_running_sem == NULL) {
-        rx_running_sem = xSemaphoreCreateMutex();
+    if (audio_mutex == NULL) audio_mutex = xSemaphoreCreateMutex();
+    if (rx_running_sem == NULL) rx_running_sem = xSemaphoreCreateMutex();
+
+    // Crear Ring Buffer (aprox 1.5 segundo de audio = 12000 * 2 bytes * 1.5 = 36KB)
+    // Usamos 20KB para asegurar
+    if (adc_ringbuf == NULL) {
+        adc_ringbuf = xRingbufferCreate(20480, RINGBUF_TYPE_BYTEBUF);
+        if (adc_ringbuf == NULL) {
+            ESP_LOGE(TAG, "Error creando Ring Buffer");
+            return ESP_FAIL;
+        }
     }
 
-    // Crear AMBOS handles al inicio. Ahora pueden coexistir.
     ESP_RETURN_ON_ERROR(create_adc_handle(), TAG, "Fallo al crear ADC handle");
     ESP_RETURN_ON_ERROR(create_dac_handle(), TAG, "Fallo al crear DAC handle");
+
+    // Crear Tarea de Captura (Pinned to Core 1, Priority High)
+    if (capture_task_handle == NULL) {
+        xTaskCreatePinnedToCore(adc_capture_task, "adc_capture", 4096, NULL, configMAX_PRIORITIES - 1, &capture_task_handle, 1);
+    }
+    
+    capture_running = true; // Iniciar captura
 
     return ESP_OK;
 }
 
 esp_err_t audio_read(int16_t *buffer, size_t length, size_t *bytes_read)
 {
-    if (rx_paused) {
-        vTaskDelay(pdMS_TO_TICKS(100));
-        if (bytes_read) *bytes_read = 0;
-        return ESP_OK;
-    }
+    if (!adc_ringbuf) return ESP_FAIL;
 
-    if (rx_running_sem) xSemaphoreTake(rx_running_sem, portMAX_DELAY);
-
-    if (!adc_handle) {
-        if (rx_running_sem) xSemaphoreGive(rx_running_sem);
-        return ESP_FAIL;
-    }
-
-    // Lectura temporizada por software para 12000 Hz
-    // Periodo = 1000000 / 12000 = 83.33 us
-    const int64_t period_us = 83; 
-    int64_t next_time = esp_timer_get_time();
-    int samples_read = 0;
-    int val = 0;
-
-    for (size_t i = 0; i < length; i++) {
-        // Esperar al siguiente instante de muestreo
-        while (esp_timer_get_time() < next_time) {
-            // Busy wait para precisión (o yield si sobra mucho tiempo)
-            // Para 83us, busy wait es mejor para evitar jitter de scheduler
-        }
-        
-        // Leer ADC
-        if (adc_oneshot_read(adc_handle, ADC_CHANNEL, &val) == ESP_OK) {
-            // Convertir 12-bit (0-4095) a int16 centrado en 0?
-            // FT8 lib espera int16. Si es raw, el decode task lo normaliza.
-            // Aquí devolvemos raw 0-4095 en el int16.
-            buffer[i] = (int16_t)val;
-            samples_read++;
-        } else {
-            buffer[i] = 2048; // Valor medio por defecto en error
-        }
-
-        next_time += period_us;
-    }
-
-    if (rx_running_sem) xSemaphoreGive(rx_running_sem);
+    size_t bytes_needed = length * sizeof(int16_t);
+    size_t total_received = 0;
     
-    if (bytes_read) *bytes_read = samples_read * sizeof(int16_t);
+    // Loop until we get ALL needed bytes
+    while (total_received < bytes_needed) {
+        size_t chunk_size = 0;
+        // Wait up to 100ms for a chunk
+        void *data = xRingbufferReceiveUpTo(adc_ringbuf, &chunk_size, pdMS_TO_TICKS(100), bytes_needed - total_received);
+        
+        if (data) {
+            memcpy((uint8_t*)buffer + total_received, data, chunk_size);
+            vRingbufferReturnItem(adc_ringbuf, data);
+            total_received += chunk_size;
+        } else {
+            // Timeout (buffer empty). 
+            // Check if we should abort? For now, keep waiting.
+            // But if we wait too long (e.g. 5 seconds), abort to avoid hanging forever.
+            static int timeout_count = 0;
+            timeout_count++;
+            if (timeout_count > 50) { // 5 seconds
+                ESP_LOGE(TAG, "Audio Read Timeout (Starvation)");
+                if (bytes_read) *bytes_read = total_received;
+                return ESP_ERR_TIMEOUT;
+            }
+        }
+    }
+    
+    if (bytes_read) *bytes_read = total_received;
     return ESP_OK;
 }
 
@@ -217,12 +316,12 @@ esp_err_t audio_tx_start(void)
 {
     ESP_LOGI(TAG, ">>> Cambiando a MODO TX (Enable DAC) <<<");
     
+    // Pausar captura RX
+    capture_running = false;
     audio_pause_rx(); 
 
     if (audio_mutex) xSemaphoreTake(audio_mutex, portMAX_DELAY);
 
-    // Solo habilitar DAC. ADC OneShot no necesita "pararse" (solo dejamos de llamar a read)
-    
     // Lazy Init: Si por alguna razón el handle no existe (fallo en init?), crearlo ahora.
     if (!dac_handle) {
         ESP_LOGW(TAG, "DAC Handle no existe en TX Start, intentando crear...");
@@ -261,6 +360,13 @@ esp_err_t audio_tx_stop(void)
     if (audio_mutex) xSemaphoreGive(audio_mutex);
     
     audio_resume_rx();
+    
+    // Reanudar captura RX
+    // Limpiar buffer viejo?
+    if (adc_ringbuf) {
+        // Opcional: xRingbufferClear(adc_ringbuf); // No existe API directa standard, pero podemos leer hasta vaciar
+    }
+    capture_running = true;
     
     return ESP_OK;
 }

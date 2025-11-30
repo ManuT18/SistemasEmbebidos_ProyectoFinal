@@ -23,8 +23,10 @@ static const char *TAG = "FT8_TX";
 
 // Variables de estado
 static volatile bool g_tx_busy = false;
+static int g_tx_mode = 0; // 0=CQ, 1=MSG
 static char g_tx_call[16];
 static char g_tx_grid[8];
+static char g_tx_msg_text[14]; // Max 13 chars for free text
 static uint16_t g_tx_base_freq = 1000; // Frecuencia por defecto
 
 // ... (audio_buf definition) ...
@@ -52,7 +54,11 @@ static int16_t audio_buf[SAMPLES_PER_SYMBOL];
  */
 static void ft8_tx_task(void *arg)
 {
-    ESP_LOGI(TAG, "Iniciando Transmisión CQ: %s %s", g_tx_call, g_tx_grid);
+    if (g_tx_mode == 0) {
+        ESP_LOGI(TAG, "Iniciando Transmisión CQ: %s %s", g_tx_call, g_tx_grid);
+    } else {
+        ESP_LOGI(TAG, "Iniciando Transmisión MSG: %s", g_tx_msg_text);
+    }
     
     // --- Sincronización con Slot de Tiempo (00, 15, 30, 45) ---
     struct timeval tv;
@@ -87,16 +93,20 @@ static void ft8_tx_task(void *arg)
 
     vTaskDelay(pdMS_TO_TICKS(wait_ms));
 
-    web_interface_send_log("📡 TX: Generando mensaje CQ...");
+    web_interface_send_log("📡 TX: Generando mensaje...");
 
     // 1. Codificar Mensaje
     ftx_message_t msg;
     ftx_message_init(&msg);
-    
-    // Codificar "CQ CALL GRID" (Standard Message)
-    // ftx_message_encode_std intenta adivinar si es CQ, DE, etc.
-    // Para CQ específico: call_to="CQ", call_de=g_tx_call, extra=g_tx_grid
-    ftx_message_rc_t rc = ftx_message_encode_std(&msg, NULL, "CQ", g_tx_call, g_tx_grid);
+    ftx_message_rc_t rc = FTX_MESSAGE_RC_OK;
+
+    if (g_tx_mode == 0) {
+        // Codificar "CQ CALL GRID" (Standard Message)
+        rc = ftx_message_encode_std(&msg, NULL, "CQ", g_tx_call, g_tx_grid);
+    } else {
+        // Codificar Texto Libre (Max 13 chars)
+        rc = ftx_message_encode_free(&msg, g_tx_msg_text);
+    }
     
     if (rc != FTX_MESSAGE_RC_OK) {
         ESP_LOGE(TAG, "Error codificando mensaje: %d", rc);
@@ -174,9 +184,30 @@ bool ft8_tx_cq(const char *callsign, const char *grid)
     strncpy(g_tx_call, callsign, sizeof(g_tx_call)-1);
     strncpy(g_tx_grid, grid, sizeof(g_tx_grid)-1);
     
+    g_tx_mode = 0; // CQ Mode
     g_tx_busy = true;
 
     // Crear tarea para no bloquear el contexto actual (Web Server)
+    xTaskCreate(ft8_tx_task, "ft8_tx_task", 16384, NULL, 5, NULL);
+
+    return true;
+}
+
+bool ft8_tx_msg(const char *msg)
+{
+    if (g_tx_busy) {
+        return false;
+    }
+
+    if (!msg) return false;
+
+    // Copiar mensaje
+    strncpy(g_tx_msg_text, msg, sizeof(g_tx_msg_text)-1);
+    g_tx_msg_text[sizeof(g_tx_msg_text)-1] = '\0'; // Asegurar null-term
+    
+    g_tx_mode = 1; // MSG Mode
+    g_tx_busy = true;
+
     xTaskCreate(ft8_tx_task, "ft8_tx_task", 16384, NULL, 5, NULL);
 
     return true;

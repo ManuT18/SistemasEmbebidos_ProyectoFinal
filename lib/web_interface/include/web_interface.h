@@ -72,6 +72,19 @@ typedef bool (*web_tx_cq_cb_t)(const char *callsign, const char *grid);
 void web_interface_set_tx_cq_callback(web_tx_cq_cb_t cb);
 
 /**
+ * @brief Callback function type for transmitting a custom message
+ * @return true if accepted, false otherwise
+ */
+typedef bool (*web_tx_msg_cb_t)(const char *msg);
+
+/**
+ * @brief Set the callback function to transmit a custom message
+ * 
+ * @param cb Callback function
+ */
+void web_interface_set_tx_msg_callback(web_tx_msg_cb_t cb);
+
+/**
  * @brief Callback function type for setting TX frequency
  * @param freq Frequency in Hz
  */

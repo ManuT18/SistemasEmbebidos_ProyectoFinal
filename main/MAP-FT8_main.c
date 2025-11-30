@@ -78,6 +78,12 @@ void app_main(void)
 
     // Inicializar Interfaz Web y WiFi AP
     web_interface_init();
+
+    // Inicializar Driver de Audio
+    if (audio_driver_init() != ESP_OK) {
+        ESP_LOGE("MAP-FT8", "Fallo al inicializar Audio Driver");
+        return;
+    }
     
     // Registrar proveedores de datos
     web_interface_register_data_providers(get_station_callsign, get_station_grid);
@@ -90,6 +96,7 @@ void app_main(void)
 
     // Registrar callback para transmisión CQ
     web_interface_set_tx_cq_callback(ft8_tx_cq);
+    web_interface_set_tx_msg_callback(ft8_tx_msg);
 
     // Registrar callbacks para configuración de frecuencia
     web_interface_register_freq_callbacks(ft8_set_tx_freq, ft8_get_tx_freq);

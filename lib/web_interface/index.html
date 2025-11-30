@@ -410,12 +410,18 @@
             <!-- Waterfall -->
             <div id="waterfall-container">
                 <span id="waterfall-label">WATERFALL (300-3000 Hz)</span>
-                <canvas id="wf-canvas" width="449" height="200"></canvas>
+                <canvas id="wf-canvas" width="449" height="93"></canvas>
             </div>
 
             <!-- Console -->
             <div id="log-container">
                 <div id="log">Esperando conexión...</div>
+            </div>
+
+            <!-- Custom Message Input -->
+            <div style="display: flex; gap: 5px;">
+                <input type="text" id="custom-msg-input" class="login-input" style="flex: 1; width: auto;" placeholder="MENSAJE (13 CHARS)" maxlength="13">
+                <button class="action-btn" style="flex: 0 0 auto;" onclick="sendCustomMsg()">ENVIAR</button>
             </div>
 
             <!-- Footer Controls -->
@@ -700,6 +706,19 @@
             socket.send("START_TEST");
         }
 
+        function sendCustomMsg() {
+            if (isSpectator) return;
+            var input = document.getElementById('custom-msg-input');
+            var msg = input.value.toUpperCase().trim();
+            if (msg.length > 0) {
+                socket.send("TX_MSG:" + msg);
+                logToUI("📤 TX Solicitado: " + msg);
+                input.value = "";
+            } else {
+                alert("Escribe un mensaje");
+            }
+        }
+
         function toggleSleep() { 
             if (isSpectator) return;
             // Sincronizar estado visual
@@ -740,13 +759,13 @@
 
         function updateClock() {
             var now = new Date();
-            // Aplicar offset visualmente solo para referencia (opcional, pero ayuda a ver qué hora tiene el sistema)
-            // Ojo: El reloj de JS muestra la hora del sistema. El offset se aplica al ENVIAR al ESP32.
+            // Aplicar offset al tiempo visualizado
+            var adjustedTime = new Date(now.getTime() + (clockOffset * 1000));
             
-            var hours = String(now.getUTCHours()).padStart(2, '0');
-            var minutes = String(now.getUTCMinutes()).padStart(2, '0');
-            var seconds = String(now.getUTCSeconds()).padStart(2, '0');
-            var millis = String(Math.floor(now.getUTCMilliseconds() / 10)).padStart(2, '0');
+            var hours = String(adjustedTime.getUTCHours()).padStart(2, '0');
+            var minutes = String(adjustedTime.getUTCMinutes()).padStart(2, '0');
+            var seconds = String(adjustedTime.getUTCSeconds()).padStart(2, '0');
+            var millis = String(Math.floor(adjustedTime.getUTCMilliseconds() / 10)).padStart(2, '0');
             
             var timeStr = hours + ":" + minutes + ":" + seconds + "." + millis;
             

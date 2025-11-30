@@ -31,4 +31,12 @@ uint16_t ft8_get_tx_freq(void);
  */
 bool ft8_tx_cq(const char *callsign, const char *grid);
 
+/**
+ * @brief Solicita la transmisión de un mensaje de texto libre.
+ * 
+ * @param msg Mensaje a transmitir (max 13 caracteres)
+ * @return true si se aceptó la solicitud, false si ya está transmitiendo.
+ */
+bool ft8_tx_msg(const char *msg);
+
 #endif // FT8_ENCODE_TASK_H
