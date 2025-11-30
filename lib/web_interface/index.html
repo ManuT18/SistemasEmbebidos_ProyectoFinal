@@ -173,13 +173,12 @@
         }
 
         #waterfall-label {
-            position: absolute;
-            top: 5px;
-            left: 5px;
-            background: rgba(0,0,0,0.7);
-            padding: 2px 5px;
+            text-align: left;
             font-size: 0.8em;
-            pointer-events: none;
+            color: #888;
+            margin-top: 2px;
+            margin-bottom: 5px;
+            padding-left: 2px;
         }
 
         /* Console */
@@ -396,6 +395,7 @@
             </div>
 
             <button class="sidebar-btn" onclick="syncTime(); alert('Hora sincronizada');">🔄 SINCRONIZAR HORA</button>
+
             <button class="sidebar-btn" onclick="openSettings()">⚙️ CONFIGURACIÓN</button>
         </div>
 
@@ -408,10 +408,13 @@
         <div id="main-container">
             
             <!-- Waterfall -->
-            <div id="waterfall-container">
-                <span id="waterfall-label">WATERFALL (300-3000 Hz)</span>
+            <div id="ruler-container" style="display: flex; justify-content: center; background: #000; margin-bottom: 0;">
+                 <canvas id="ruler-canvas" width="449" height="20"></canvas>
+            </div>
+            <div id="waterfall-container" style="margin-top: 0;">
                 <canvas id="wf-canvas" width="449" height="93"></canvas>
             </div>
+            <span id="waterfall-label">WATERFALL (200-3000 Hz)</span>
 
             <!-- Console -->
             <div id="log-container">
@@ -427,6 +430,7 @@
             <!-- Footer Controls -->
             <div id="footer-controls">
                 <button class="action-btn" onclick="sendCQ()">📢 TX CQ</button>
+                <button class="action-btn" onclick="skipSlot()">⏭️ SALTAR SLOT</button>
                 <button class="action-btn" onclick="runFullTestSequence()">🚀 TEST COMPLETO</button>
             </div>
         </div>
@@ -668,6 +672,46 @@
             logToUI("📊 Waterfall actualizada (" + data.length + " bytes)");
         }
 
+        function drawRuler() {
+            const rCanvas = document.getElementById('ruler-canvas');
+            const rCtx = rCanvas.getContext('2d');
+            const width = rCanvas.width;
+            const height = rCanvas.height;
+            
+            rCtx.fillStyle = "#000";
+            rCtx.fillRect(0, 0, width, height);
+            
+            rCtx.fillStyle = "#fff"; // Color texto
+            rCtx.strokeStyle = "#fff"; // Color lineas
+            rCtx.font = "10px Arial";
+            rCtx.textAlign = "center";
+            rCtx.lineWidth = 1;
+
+            const fMin = 200;
+            const fMax = 3000;
+            const span = fMax - fMin;
+            
+            // Dibujar marcas
+            for (let f = 200; f <= 3000; f += 100) {
+                let x = ((f - fMin) / span) * width;
+                
+                if (f % 500 === 0) {
+                    // Marca grande y texto
+                    rCtx.beginPath();
+                    rCtx.moveTo(x, height);
+                    rCtx.lineTo(x, height - 8);
+                    rCtx.stroke();
+                    rCtx.fillText(f, x, height - 10);
+                } else {
+                    // Marca pequeña
+                    rCtx.beginPath();
+                    rCtx.moveTo(x, height);
+                    rCtx.lineTo(x, height - 4);
+                    rCtx.stroke();
+                }
+            }
+        }
+
         function logToUI(msg) {
             var log = document.getElementById('log');
             var p = document.createElement('p');
@@ -757,6 +801,14 @@
              }
         }
 
+        function skipSlot() {
+            if (isSpectator) return;
+            if (confirm("¿Saltar el próximo slot de escucha?")) {
+                socket.send("SKIP_SLOT");
+                logToUI("⏭️ Solicitud de salto enviada...");
+            }
+        }
+
         function updateClock() {
             var now = new Date();
             // Aplicar offset al tiempo visualizado
@@ -778,6 +830,7 @@
         }
         setInterval(updateClock, 50); 
         updateClock();
+        drawRuler();
     </script>
 </body>
 </html>

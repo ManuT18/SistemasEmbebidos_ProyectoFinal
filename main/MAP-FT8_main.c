@@ -97,6 +97,7 @@ void app_main(void)
     // Registrar callback para transmisión CQ
     web_interface_set_tx_cq_callback(ft8_tx_cq);
     web_interface_set_tx_msg_callback(ft8_tx_msg);
+    web_interface_set_skip_slot_callback(ft8_skip_next_slot);
 
     // Registrar callbacks para configuración de frecuencia
     web_interface_register_freq_callbacks(ft8_set_tx_freq, ft8_get_tx_freq);

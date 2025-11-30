@@ -39,4 +39,10 @@ bool ft8_tx_cq(const char *callsign, const char *grid);
  */
 bool ft8_tx_msg(const char *msg);
 
+/**
+ * @brief Fuerza el salto del siguiente slot de tiempo (15s).
+ * Útil para corregir desincronización de slots pares/impares.
+ */
+void ft8_skip_next_slot(void);
+
 #endif // FT8_ENCODE_TASK_H

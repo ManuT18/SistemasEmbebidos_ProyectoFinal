@@ -47,6 +47,7 @@ static web_get_data_cb_t g_get_grid_cb = NULL;
 static web_test_cb_t g_test_cb = NULL;
 static web_tx_cq_cb_t g_tx_cq_cb = NULL;
 static web_tx_msg_cb_t g_tx_msg_cb = NULL;
+static web_skip_slot_cb_t g_skip_slot_cb = NULL;
 static web_set_freq_cb_t g_set_freq_cb = NULL;
 static web_get_freq_cb_t g_get_freq_cb = NULL;
 
@@ -58,6 +59,10 @@ void web_interface_set_tx_cq_callback(web_tx_cq_cb_t cb) {
 
 void web_interface_set_tx_msg_callback(web_tx_msg_cb_t cb) {
     g_tx_msg_cb = cb;
+}
+
+void web_interface_set_skip_slot_callback(web_skip_slot_cb_t cb) {
+    g_skip_slot_cb = cb;
 }
 
 // Prototipos de funciones estáticas
@@ -381,6 +386,13 @@ static esp_err_t echo_handler(httpd_req_t *req)
                     } else {
                         web_interface_send_log("⚠️ Función TX MSG no registrada");
                     }
+                }
+            }
+        } else if (strcmp(payload, "SKIP_SLOT") == 0) {
+            if (current_fd == g_master_fd) {
+                if (g_skip_slot_cb) {
+                    g_skip_slot_cb();
+                    web_interface_send_log("⏭️ Solicitud de salto de slot recibida");
                 }
             }
         } else if (strncmp(payload, "SET_FREQ:", 9) == 0) {

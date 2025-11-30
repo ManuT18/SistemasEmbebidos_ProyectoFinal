@@ -85,6 +85,18 @@ typedef bool (*web_tx_msg_cb_t)(const char *msg);
 void web_interface_set_tx_msg_callback(web_tx_msg_cb_t cb);
 
 /**
+ * @brief Callback function type for skipping the next slot
+ */
+typedef void (*web_skip_slot_cb_t)(void);
+
+/**
+ * @brief Set the callback function to skip the next slot
+ * 
+ * @param cb Callback function
+ */
+void web_interface_set_skip_slot_callback(web_skip_slot_cb_t cb);
+
+/**
  * @brief Callback function type for setting TX frequency
  * @param freq Frequency in Hz
  */

@@ -63,14 +63,26 @@ static const int num_test_files = sizeof(test_files) / sizeof(test_files[0]);
 
 // Bandera global para controlar el inicio del test
 static volatile bool g_run_test_flag = false;
+static volatile bool g_skip_next_slot = false;
+static TaskHandle_t g_decode_task_handle = NULL;
 
 void ft8_start_test(void) {
     g_run_test_flag = true;
     ESP_LOGI(TAG, "Solicitud de TEST recibida.");
 }
 
+void ft8_skip_next_slot(void) {
+    g_skip_next_slot = true;
+    if (g_decode_task_handle) {
+        xTaskNotifyGive(g_decode_task_handle);
+    }
+    ESP_LOGI(TAG, "Solicitud de SALTAR SLOT recibida.");
+    web_interface_send_log("⏭️ Saltando próximo slot...");
+}
+
 void ft8_decode_task(void *pvParameters)
 {
+    g_decode_task_handle = xTaskGetCurrentTaskHandle();
     ESP_LOGI(TAG, "Tarea de Decodificación FT8 iniciada (Monitor Mode)");
 
     /* Configuración del Monitor */
@@ -177,6 +189,10 @@ void ft8_decode_task(void *pvParameters)
                 }
 #else
                 // Sincronización en Modo Live (Microfono)
+                
+                // Limpiar notificaciones pendientes (de pulsaciones durante RX/DECODE)
+                xTaskNotifyStateClear(NULL);
+
                 struct timeval tv;
                 gettimeofday(&tv, NULL);
                 struct tm *timeinfo = localtime(&tv.tv_sec);
@@ -187,6 +203,14 @@ void ft8_decode_task(void *pvParameters)
                 // Si falta menos de 1 segundo, esperar al siguiente ciclo para asegurar
                 if (wait_sec < 1) wait_sec += 15;
 
+                // Lógica de Salto de Slot
+                if (g_skip_next_slot) {
+                    wait_sec += 15;
+                    g_skip_next_slot = false;
+                    ESP_LOGW(TAG, "SALTANDO SLOT (+15s extra)");
+                    web_interface_send_log("⏭️ Saltando Slot...");
+                }
+
                 ESP_LOGI(TAG, "Sincronizando... Esperando %d segundos (Inicio: %02d:%02d:%02d)", 
                          wait_sec, timeinfo->tm_hour, timeinfo->tm_min, timeinfo->tm_sec);
                 
@@ -195,8 +219,12 @@ void ft8_decode_task(void *pvParameters)
                 snprintf(msg_wait, sizeof(msg_wait), "⏳ Sincronizando (%ds)...", wait_sec);
                 web_interface_send_log(msg_wait);
 
-                // Esperar hasta el slot
-                vTaskDelay(pdMS_TO_TICKS(wait_sec * 1000));
+                // Esperar hasta el slot (Interrumpible)
+                if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(wait_sec * 1000)) == pdPASS) {
+                    ESP_LOGI(TAG, "Espera interrumpida (Skip solicitado). Recalculando...");
+                    // Volver al inicio del loop para recalcular wait_sec con la bandera g_skip_next_slot (que ya está true)
+                    break; 
+                }
                 
                 // IMPORTANTE: Vaciar buffer de audio viejo antes de empezar
                 audio_flush_rx();
