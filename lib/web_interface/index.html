@@ -1,0 +1,836 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset='utf-8'>
+    <meta name='viewport' content='width=device-width, initial-scale=1'>
+    <title>Modem FT8</title>
+    <style>
+        body { 
+            background: #050505; 
+            color: #0f0; 
+            font-family: 'Courier New', monospace; 
+            margin: 0; 
+            display: flex; 
+            flex-direction: column; 
+            min-height: 100vh; 
+            position: relative; 
+            overflow-x: hidden; 
+        }
+
+        /* Sidebar */
+        #sidebar {
+            position: fixed;
+            top: 0;
+            left: -250px; 
+            width: 250px;
+            height: 100%;
+            background: #111;
+            border-right: 1px solid #333;
+            transition: left 0.3s ease;
+            z-index: 2000;
+            padding-top: 80px; 
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 30px;
+            overflow-y: auto; /* Permitir scroll si es necesario */
+        }
+        #sidebar.open {
+            left: 0;
+        }
+
+        /* Menu Button */
+        #menu-btn {
+            position: absolute;
+            top: 15px;
+            left: 15px;
+            background: transparent;
+            color: #0f0;
+            border: 1px solid #0f0;
+            font-size: 1.5em;
+            cursor: pointer;
+            z-index: 2100; 
+            padding: 5px 10px;
+            border-radius: 4px;
+        }
+
+        /* Sidebar Items */
+        .sidebar-item {
+            width: 80%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+            padding: 15px;
+            background: #222;
+            border-radius: 8px;
+            border: 1px solid #333;
+        }
+        
+        .sidebar-label {
+            font-weight: bold;
+            color: #fff;
+            font-size: 0.9em;
+        }
+
+        .sidebar-btn {
+            background: #333;
+            color: #0f0;
+            border: 1px solid #0f0;
+            width: 80%;
+            padding: 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 1em;
+            transition: background 0.2s;
+        }
+        .sidebar-btn:hover { background: #444; }
+
+        #logout-btn {
+            background: #d00;
+            color: white;
+            border: none;
+        }
+
+        /* Titles */
+        h1 {
+            text-align: center;
+            margin: 45px 0 5px 0; 
+            font-size: 1.8em;
+        }
+
+        h2 {
+            text-align: center;
+            margin: 5px 0 15px 0;
+            font-size: 1.2em;
+            color: #aaa;
+        }
+
+        #clock-display {
+            text-align: center;
+            font-size: 0.96em;
+            margin: 0 0 15px 0;
+            color: #0f0;
+            font-weight: bold;
+        }
+
+        /* Toggle Switch */
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 30px;
+            height: 15px;
+        }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-color: #2196F3; 
+            transition: .2s;
+            border-radius: 20px;
+        }
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 11px;
+            width: 11px;
+            left: 2px;
+            bottom: 2px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+        input:checked + .slider { background-color: #f3cd21; }
+        input:checked + .slider:before { transform: translateX(15px); }
+
+        /* Main Layout */
+        #main-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 0 5% 10px 5%; 
+            gap: 10px;
+        }
+
+        /* Waterfall */
+        #waterfall-container {
+            flex: 2;
+            background: #000;
+            border: 1px solid #333;
+            position: relative;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+        }
+        
+        canvas {
+            width: 100%;
+            height: 100%;
+            image-rendering: pixelated; 
+        }
+
+        #waterfall-label {
+            text-align: left;
+            font-size: 0.8em;
+            color: #888;
+            margin-top: 2px;
+            margin-bottom: 5px;
+            padding-left: 2px;
+        }
+
+        /* Console */
+        #log-container {
+            height: 300px;
+            min-height: 300px;
+            background: #000;
+            border: 1px solid #333;
+            overflow-y: auto;
+            padding: 10px;
+            font-size: 0.9em;
+            text-align: left;
+        }
+        #log p { margin: 2px 0; border-bottom: 1px solid #111; }
+
+        /* Footer */
+        #footer-controls {
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+            padding: 5px;
+        }
+        
+        .action-btn {
+            flex: 1;
+            padding: 15px;
+            background: #fff;
+            color: #000;
+            border: none;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 1em;
+            border-radius: 4px;
+            transition: background 0.2s;
+        }
+        .action-btn:hover { background: #ccc; }
+
+        /* Login Screen */
+        #login-screen {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: #050505;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            gap: 20px;
+            z-index: 3000; 
+        }
+        .login-input {
+            padding: 10px;
+            background: #222;
+            color: #0f0;
+            border: 1px solid #0f0;
+            text-transform: uppercase;
+            width: 200px;
+            text-align: center;
+        }
+        .hidden { display: none !important; }
+
+        /* Sleep Screen */
+        #sleep-screen {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: #000;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 2500; 
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.5s ease, visibility 0.5s;
+        }
+        #sleep-screen.active {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        /* Big Switch */
+        .big-switch {
+            width: 80px;
+            height: 40px;
+        }
+        .big-switch .slider:before {
+            height: 32px;
+            width: 32px;
+            left: 4px;
+            bottom: 4px;
+        }
+        .big-switch input:checked + .slider { background-color: #f3cd21; }
+
+        /* Modals */
+        .modal {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.9);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 3000;
+        }
+        .modal-content {
+            background: #111;
+            padding: 20px;
+            border: 1px solid #0f0;
+            border-radius: 8px;
+            text-align: center;
+            min-width: 300px;
+        }
+        .modal-input {
+            padding: 8px;
+            background: #222;
+            color: #fff;
+            border: 1px solid #555;
+            width: 100px;
+            text-align: center;
+            margin: 10px;
+        }
+
+        /* Spectator Mode */
+        .spectator-mode #main-container {
+            border: 2px solid #d00;
+        }
+        .spectator-mode .action-btn, .spectator-mode .sidebar-btn {
+            background: #333 !important;
+            color: #888 !important;
+            cursor: not-allowed;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Login Screen -->
+    <div id="login-screen">
+        <h2>📡 Identificación</h2>
+        <input type="text" id="callsign" class="login-input" placeholder="CALLSIGN (ej. LU7AA)">
+        <input type="text" id="grid" class="login-input" placeholder="GRID (ej. GF05)">
+        <button class="action-btn" style="width: 220px; flex: none; background: #050505; color: #0f0; border: 1px solid #0f0;" onclick="login()">INGRESAR</button>
+    </div>
+
+    <!-- Sleep Screen Overlay -->
+    <div id="sleep-screen">
+        <div style="font-size: 3em; margin-bottom: 20px;">🌙</div>
+        <h1>MODO SLEEP ACTIVADO</h1>
+        <div id="sleep-clock" style="font-size: 2em; color: #0f0; margin: 20px 0; font-weight: bold;">--:--:--</div>
+        
+        <div style="margin: 30px 0; display: flex; align-items: center; gap: 15px;">
+            <span style="font-size: 1.5em;">💤</span>
+            <label class="switch big-switch">
+                <input type="checkbox" id="sleep-toggle-big" onclick="toggleSleep()" checked>
+                <span class="slider"></span>
+            </label>
+            <span style="font-size: 1.5em;">⚡</span>
+        </div>
+
+        <p style="color: #888; max-width: 80%; text-align: center;">
+            El dispositivo está en modo de bajo consumo.<br>
+            La recepción FT8 y la cascada están pausadas.<br>
+            Desactiva el interruptor para volver al modo normal.
+        </p>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="modal hidden">
+        <div class="modal-content">
+            <h2>⚙️ CONFIGURACIÓN</h2>
+            
+            <div style="margin: 20px 0;">
+                <label>Frecuencia TX (Hz):</label><br>
+                <input type="number" id="tx-freq-input" class="modal-input" min="100" max="3000" value="1000">
+            </div>
+
+            <div style="margin: 20px 0;">
+                <label>Offset Tiempo (seg):</label><br>
+                <div style="display: flex; align-items: center; justify-content: center; gap: 15px; margin-top: 10px;">
+                    <button class="action-btn" style="padding: 5px 15px; width: auto;" onclick="adjustOffset(-0.1)">-</button>
+                    <span id="offset-display" style="font-size: 1.5em; font-weight: bold; width: 80px; color: #fff;">0.0</span>
+                    <button class="action-btn" style="padding: 5px 15px; width: auto;" onclick="adjustOffset(0.1)">+</button>
+                </div>
+                <small style="color:#888;">(+ adelanta, - atrasa)</small>
+            </div>
+
+
+
+            <div style="display: flex; gap: 10px; justify-content: center;">
+                <button class="action-btn" onclick="saveSettings()">GUARDAR</button>
+                <button class="action-btn" style="background: #d00; color: #fff;" onclick="closeSettings()">CANCELAR</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Interface -->
+    <div id="app-screen" class="hidden">
+        
+        <!-- Menu Button -->
+        <button id="menu-btn" onclick="toggleSidebar()">☰</button>
+
+        <!-- Sidebar -->
+        <div id="sidebar">
+            <button id="logout-btn" class="sidebar-btn" onclick="logout()">CERRAR SESIÓN</button>
+
+            <div class="sidebar-item">
+                <span class="sidebar-label">MODO ENERGÍA</span>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <span style="font-size: 0.9em;">💤</span>
+                    <label class="switch">
+                        <input type="checkbox" id="sleep-toggle" onclick="toggleSleep()" checked>
+                        <span class="slider"></span>
+                    </label>
+                    <span style="font-size: 0.9em;">⚡</span>
+                </div>
+            </div>
+
+            <button class="sidebar-btn" onclick="syncTime(); alert('Hora sincronizada');">🔄 SINCRONIZAR HORA</button>
+
+            <button class="sidebar-btn" onclick="openSettings()">⚙️ CONFIGURACIÓN</button>
+        </div>
+
+        <!-- Titles -->
+        <h1>📡 MAP-FT8</h1>
+        <h2>Modem Autonomo Portable FT8</h2>
+        <h3 id="clock-display">HORA ACTUAL (UTC): --:--:--.--</h3>
+
+        <!-- Main Content -->
+        <div id="main-container">
+            
+            <!-- Waterfall -->
+            <div id="ruler-container" style="display: flex; justify-content: center; background: #000; margin-bottom: 0;">
+                 <canvas id="ruler-canvas" width="449" height="20"></canvas>
+            </div>
+            <div id="waterfall-container" style="margin-top: 0;">
+                <canvas id="wf-canvas" width="449" height="93"></canvas>
+            </div>
+            <span id="waterfall-label">WATERFALL (200-3000 Hz)</span>
+
+            <!-- Console -->
+            <div id="log-container">
+                <div id="log">Esperando conexión...</div>
+            </div>
+
+            <!-- Custom Message Input -->
+            <div style="display: flex; gap: 5px;">
+                <input type="text" id="custom-msg-input" class="login-input" style="flex: 1; width: auto;" placeholder="MENSAJE (13 CHARS)" maxlength="13">
+                <button class="action-btn" style="flex: 0 0 auto;" onclick="sendCustomMsg()">ENVIAR</button>
+            </div>
+
+            <!-- Footer Controls -->
+            <div id="footer-controls">
+                <button class="action-btn" onclick="sendCQ()">📢 TX CQ</button>
+                <button class="action-btn" onclick="skipSlot()">⏭️ SALTAR SLOT</button>
+                <button class="action-btn" onclick="runFullTestSequence()">🚀 TEST COMPLETO</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        var socket;
+        var isSpectator = false;
+
+        function initWebSocket() {
+            var wsUrl = "ws://" + location.host + "/ws";
+            socket = new WebSocket(wsUrl);
+            
+            socket.onopen = function() {
+                console.log("WebSocket Conectado");
+                syncTime(); // Sincronizar hora al conectar
+                checkLogin();
+            };
+            
+            socket.onmessage = function(event) {
+                if (typeof event.data === "string") {
+                    var msg = event.data;
+                    if (msg.startsWith("LOGIN_BUSY:")) {
+                        var master = msg.split(":")[1];
+                        showBusyModal(master);
+                    } else if (msg.startsWith("FREQ:")) {
+                        var freq = msg.split(":")[1];
+                        document.getElementById('tx-freq-input').value = freq;
+                    } else if (msg === "PONG") {
+                        var rtt = Date.now() - pingStart;
+                        var latency = Math.floor(rtt / 2);
+                        var now = Date.now();
+                        
+                        // Hora corregida = Hora Sistema + Latencia Red + Offset Manual (segundos -> ms)
+                        var offsetMs = clockOffset * 1000;
+                        var compensatedTime = now + latency + offsetMs;
+                        
+                        socket.send("SYNC_TIME_MS:" + compensatedTime);
+                        console.log("Sincronización: RTT=" + rtt + "ms, Latencia=" + latency + "ms, Offset=" + offsetMs + "ms");
+                    } else {
+                        logToUI(msg);
+                    }
+                } else {
+                    // Binary data (Waterfall)
+                    var reader = new FileReader();
+                    reader.onload = function() {
+                        drawWaterfall(reader.result);
+                    };
+                    reader.readAsArrayBuffer(event.data);
+                }
+            };
+            
+            socket.onclose = function() {
+                console.log("WebSocket Desconectado. Reintentando...");
+                setTimeout(initWebSocket, 2000);
+            };
+            
+            socket.onerror = function(error) {
+                console.log("Error WebSocket", error);
+            };
+        }
+
+        // Iniciar conexión al cargar
+        initWebSocket();
+        
+        // Sincronización periódica para corregir deriva del reloj (cada 30 seg)
+        setInterval(syncTime, 30000);
+
+        // --- Login Logic ---
+        function checkLogin() {
+            var call = localStorage.getItem('callsign');
+            var grid = localStorage.getItem('grid');
+            if (call && grid) {
+                document.getElementById('callsign').value = call;
+                document.getElementById('grid').value = grid;
+                if (socket.readyState === WebSocket.OPEN) {
+                    socket.send("LOGIN:" + call + ":" + grid);
+                    showApp();
+                }
+            }
+        }
+
+        function login() {
+            var call = document.getElementById('callsign').value.toUpperCase().trim();
+            var grid = document.getElementById('grid').value.toUpperCase().trim();
+            if (call && grid) {
+                localStorage.setItem('callsign', call);
+                localStorage.setItem('grid', grid);
+                if (socket.readyState === WebSocket.OPEN) {
+                    socket.send("LOGIN:" + call + ":" + grid);
+                    showApp();
+                } else {
+                    alert("No hay conexión con el servidor.");
+                }
+            } else {
+                alert("Datos incompletos");
+            }
+        }
+
+        function logout() {
+            if (confirm("¿Cerrar sesión y liberar control?")) {
+                localStorage.removeItem('callsign');
+                localStorage.removeItem('grid');
+                socket.send("LOGOUT");
+                location.reload();
+            }
+        }
+
+        function showApp() {
+            document.getElementById('login-screen').classList.add('hidden');
+            document.getElementById('app-screen').classList.remove('hidden');
+        }
+
+        function showBusyModal(masterCall) {
+            var modal = document.getElementById('busy-modal');
+            if (!modal) {
+                modal = document.createElement('div');
+                modal.id = 'busy-modal';
+                modal.className = 'modal';
+                modal.innerHTML = `
+                    <div class="modal-content">
+                        <h2 style="color:#d00;">⚠️ SISTEMA EN USO</h2>
+                        <p>El usuario <b>${masterCall}</b> tiene el control.</p>
+                        <div style="display:flex; gap:10px; justify-content:center; margin-top:20px;">
+                            <button class="action-btn" onclick="enterSpectatorMode()">👁️ MODO ESPECTADOR</button>
+                            <button class="action-btn" onclick="exitBusyMode()">SALIR</button>
+                        </div>
+                    </div>
+                `;
+                document.body.appendChild(modal);
+            }
+        }
+
+        function exitBusyMode() {
+            localStorage.removeItem('callsign');
+            localStorage.removeItem('grid');
+            location.reload();
+        }
+
+        function enterSpectatorMode() {
+            isSpectator = true;
+            document.body.classList.add('spectator-mode');
+            var modal = document.getElementById('busy-modal');
+            if (modal) modal.remove();
+            showApp();
+            logToUI("👁️ Modo Espectador Activo (Solo lectura)");
+            
+            // Deshabilitar controles
+            document.getElementById('sleep-toggle').disabled = true;
+            document.getElementById('sleep-toggle-big').disabled = true;
+            document.getElementById('logout-btn').style.display = 'none';
+            // Deshabilitar botones del footer
+            var footerBtns = document.querySelectorAll('#footer-controls button');
+            footerBtns.forEach(btn => btn.disabled = true);
+            // Deshabilitar config
+            var sidebarBtns = document.querySelectorAll('.sidebar-btn');
+            sidebarBtns.forEach(btn => btn.disabled = true);
+        }
+
+        // --- Sidebar Logic ---
+        function toggleSidebar() {
+            var sidebar = document.getElementById('sidebar');
+            sidebar.classList.toggle('open');
+        }
+
+        // --- Settings Logic ---
+        function adjustOffset(delta) {
+            var display = document.getElementById('offset-display');
+            var current = parseFloat(display.innerText);
+            var newVal = current + delta;
+            display.innerText = newVal.toFixed(1);
+        }
+
+        function openSettings() {
+            if (isSpectator) return;
+            // Pedir valor actual
+            socket.send("GET_FREQ");
+            
+            // Cargar offset actual
+            document.getElementById('offset-display').innerText = clockOffset.toFixed(1);
+            
+            document.getElementById('settings-modal').classList.remove('hidden');
+            toggleSidebar(); // Cerrar sidebar
+        }
+
+        function closeSettings() {
+            document.getElementById('settings-modal').classList.add('hidden');
+        }
+
+        function saveSettings() {
+            var freq = document.getElementById('tx-freq-input').value;
+            socket.send("SET_FREQ:" + freq);
+            
+            // Guardar Offset
+            var offsetVal = document.getElementById('offset-display').innerText;
+            clockOffset = parseFloat(offsetVal);
+            localStorage.setItem('clockOffset', clockOffset);
+            
+            logToUI("⚙️ Configuración guardada. Offset: " + clockOffset + "s");
+            syncTime(); // Aplicar nuevo offset inmediatamente
+            
+            closeSettings();
+        }
+
+        // --- Waterfall Logic ---
+        const canvas = document.getElementById('wf-canvas');
+        const ctx = canvas.getContext('2d');
+        
+        function drawWaterfall(buffer) {
+            const data = new Uint8Array(buffer);
+            const width = canvas.width;
+            const height = canvas.height;
+            const imgData = ctx.createImageData(width, height);
+            
+            for (let i = 0; i < data.length; i++) {
+                const val = data[i];
+                let r, g, b;
+                // Mapa de calor ajustado: Fondo Azul
+                if (val < 100) {
+                    r = 0; g = 0; b = Math.floor(val * 2.55);
+                } else if (val < 160) {
+                    let p = (val - 100) / 60;
+                    r = 0; g = Math.floor(p * 255); b = 255;
+                } else if (val < 220) {
+                    let p = (val - 160) / 60;
+                    r = 0; g = 255; b = Math.floor((1-p) * 255);
+                } else {
+                    let p = (val - 220) / 35;
+                    r = Math.floor(p * 255); g = Math.floor((1-p) * 255); b = 0;
+                }
+                
+                const idx = i * 4;
+                imgData.data[idx] = r;
+                imgData.data[idx+1] = g;
+                imgData.data[idx+2] = b;
+                imgData.data[idx+3] = 255;
+            }
+            ctx.putImageData(imgData, 0, 0);
+            logToUI("📊 Waterfall actualizada (" + data.length + " bytes)");
+        }
+
+        function drawRuler() {
+            const rCanvas = document.getElementById('ruler-canvas');
+            const rCtx = rCanvas.getContext('2d');
+            const width = rCanvas.width;
+            const height = rCanvas.height;
+            
+            rCtx.fillStyle = "#000";
+            rCtx.fillRect(0, 0, width, height);
+            
+            rCtx.fillStyle = "#fff"; // Color texto
+            rCtx.strokeStyle = "#fff"; // Color lineas
+            rCtx.font = "10px Arial";
+            rCtx.textAlign = "center";
+            rCtx.lineWidth = 1;
+
+            const fMin = 200;
+            const fMax = 3000;
+            const span = fMax - fMin;
+            
+            // Dibujar marcas
+            for (let f = 200; f <= 3000; f += 100) {
+                let x = ((f - fMin) / span) * width;
+                
+                if (f % 500 === 0) {
+                    // Marca grande y texto
+                    rCtx.beginPath();
+                    rCtx.moveTo(x, height);
+                    rCtx.lineTo(x, height - 8);
+                    rCtx.stroke();
+                    rCtx.fillText(f, x, height - 10);
+                } else {
+                    // Marca pequeña
+                    rCtx.beginPath();
+                    rCtx.moveTo(x, height);
+                    rCtx.lineTo(x, height - 4);
+                    rCtx.stroke();
+                }
+            }
+        }
+
+        function logToUI(msg) {
+            var log = document.getElementById('log');
+            var p = document.createElement('p');
+            p.innerText = msg;
+            log.appendChild(p);
+            document.getElementById('log-container').scrollTop = document.getElementById('log-container').scrollHeight;
+        }
+
+        // --- Test Sequence Logic ---
+        function delay(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+
+        function sendCQ() {
+            if (isSpectator) return;
+            socket.send("TX_CQ");
+            logToUI("⏳ Solicitud TX enviada. Esperando slot...");
+        }
+
+        async function runFullTestSequence() {
+            if (isSpectator) return;
+            logToUI("🚀 Iniciando Secuencia de Test...");
+            
+            // 1. Blink LED
+            logToUI("1️⃣ Blink LED...");
+            socket.send("TOGGLE_LED"); await delay(500);
+            socket.send("TOGGLE_LED"); await delay(500);
+            socket.send("TOGGLE_LED"); await delay(500);
+            socket.send("TOGGLE_LED"); await delay(500);
+
+            // 2. Get Data
+            logToUI("2️⃣ Obteniendo Datos...");
+            socket.send("GET_CALLSIGN"); await delay(200);
+            socket.send("GET_GRID"); await delay(200);
+
+            // 3. Start Test
+            logToUI("3️⃣ Iniciando Decodificación...");
+            socket.send("START_TEST");
+        }
+
+        function sendCustomMsg() {
+            if (isSpectator) return;
+            var input = document.getElementById('custom-msg-input');
+            var msg = input.value.toUpperCase().trim();
+            if (msg.length > 0) {
+                socket.send("TX_MSG:" + msg);
+                logToUI("📤 TX Solicitado: " + msg);
+                input.value = "";
+            } else {
+                alert("Escribe un mensaje");
+            }
+        }
+
+        function toggleSleep() { 
+            if (isSpectator) return;
+            // Sincronizar estado visual
+            var bigSwitch = document.getElementById('sleep-toggle-big');
+            var smallSwitch = document.getElementById('sleep-toggle');
+            
+            var isPerformanceMode = smallSwitch.checked;
+            
+            // Detectar origen del evento para sincronizar
+            if (event && event.target.id === 'sleep-toggle-big') {
+                isPerformanceMode = bigSwitch.checked;
+                smallSwitch.checked = isPerformanceMode;
+            } else if (event && event.target.id === 'sleep-toggle') {
+                isPerformanceMode = smallSwitch.checked;
+                bigSwitch.checked = isPerformanceMode;
+            }
+
+            socket.send('TOGGLE_SLEEP'); 
+
+            // Mostrar/Ocultar Pantalla Sleep
+            var sleepScreen = document.getElementById('sleep-screen');
+            if (!isPerformanceMode) {
+                sleepScreen.classList.add('active');
+            } else {
+                sleepScreen.classList.remove('active');
+            }
+        }
+
+        var pingStart = 0;
+        var clockOffset = parseFloat(localStorage.getItem('clockOffset')) || 0; 
+
+        function syncTime() {
+             if (socket.readyState === WebSocket.OPEN) {
+                pingStart = Date.now();
+                socket.send('PING');
+             }
+        }
+
+        function skipSlot() {
+            if (isSpectator) return;
+            if (confirm("¿Saltar el próximo slot de escucha?")) {
+                socket.send("SKIP_SLOT");
+                logToUI("⏭️ Solicitud de salto enviada...");
+            }
+        }
+
+        function updateClock() {
+            var now = new Date();
+            // Aplicar offset al tiempo visualizado
+            var adjustedTime = new Date(now.getTime() + (clockOffset * 1000));
+            
+            var hours = String(adjustedTime.getUTCHours()).padStart(2, '0');
+            var minutes = String(adjustedTime.getUTCMinutes()).padStart(2, '0');
+            var seconds = String(adjustedTime.getUTCSeconds()).padStart(2, '0');
+            var millis = String(Math.floor(adjustedTime.getUTCMilliseconds() / 10)).padStart(2, '0');
+            
+            var timeStr = hours + ":" + minutes + ":" + seconds + "." + millis;
+            
+            document.getElementById('clock-display').innerText = "HORA ACTUAL (UTC): " + timeStr + " (Offset: " + clockOffset + "s)";
+            
+            var sleepClock = document.getElementById('sleep-clock');
+            if (sleepClock) {
+                sleepClock.innerText = timeStr + " UTC";
+            }
+        }
+        setInterval(updateClock, 50); 
+        updateClock();
+        drawRuler();
+    </script>
+</body>
+</html>
